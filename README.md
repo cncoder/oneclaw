@@ -4,6 +4,8 @@ One-click setup for **Claude Code + OpenClaw + AWS** on Mac Apple Silicon.
 
 Zero technical knowledge required — open Terminal, paste one command, enter your AWS keys, done.
 
+[中文文档](README.zh.md)
+
 ## Quick Start
 
 Open **Terminal** and run:
