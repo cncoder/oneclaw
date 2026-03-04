@@ -1,125 +1,129 @@
-# OnClick-Claw 🦞
+# OneClaw
 
-一键安装 Claude Code + OpenClaw + AWS 全家桶，专为 Mac Apple Silicon 设计。
+One-click setup for **Claude Code + OpenClaw + AWS** on Mac Apple Silicon.
 
-**完全不懂技术的小白也能用** — 打开终端，粘贴一行命令，按提示输入 AWS 密钥即可。
+Zero technical knowledge required — open Terminal, paste one command, enter your AWS keys, done.
 
-## 使用方法
+## Quick Start
 
-打开「终端」（Terminal），粘贴运行：
+Open **Terminal** and run:
 
 ```bash
 bash -c "$(curl -fsSL https://raw.githubusercontent.com/cncoder/oneclaw/main/setup.sh)"
 ```
 
-或者先下载再运行：
+Or download first, then run:
 
 ```bash
 curl -O https://raw.githubusercontent.com/cncoder/oneclaw/main/setup.sh
 bash setup.sh
 ```
 
-## 你需要准备什么
+## Prerequisites
 
-| 项目 | 必须？ | 说明 |
-|------|--------|------|
-| AWS Access Key + Secret Key | ✅ 必须 | 用于访问 Bedrock Claude 模型 |
-| Discord Bot Token | ❌ 可选 | 让 OpenClaw 连接 Discord 聊天 |
-| Discord Webhook URL | ❌ 可选 | 系统异常时发通知 |
+| Item | Required? | Description |
+|------|-----------|-------------|
+| AWS Access Key + Secret Key | Yes | For accessing Bedrock Claude models |
+| Discord Bot Token | No | Connect OpenClaw to Discord chat |
+| Discord Webhook URL | No | Alert notifications on system errors |
 
-## 自动安装的组件
+## What Gets Installed
 
-- **Homebrew** — macOS 包管理器
-- **Node.js** — JavaScript 运行时
-- **pnpm** — 快速包管理器
-- **uv / uvx** — Python 包管理（MCP 服务器需要）
-- **AWS CLI** — AWS 命令行工具
-- **Claude Code** — AI 编程助手（通过 Bedrock）
-- **OpenClaw** — AI Agent 框架（Gateway + Node）
-- **MCP 服务器** — Chrome DevTools、AWS 文档
-- **Guardian 守护进程** — 每 60 秒健康检查 + 自动修复
-- **LaunchAgent** — 开机自启动
+- **Homebrew** — macOS package manager
+- **Node.js** — JavaScript runtime
+- **pnpm** — Fast package manager
+- **uv / uvx** — Python package manager (for MCP servers)
+- **AWS CLI** — AWS command-line tools
+- **Claude Code** — AI coding assistant (via Bedrock)
+- **OpenClaw** — AI Agent framework (Gateway + Node)
+- **MCP Servers** — Chrome DevTools, AWS Documentation
+- **Guardian Daemon** — Health check every 60s + auto-repair
+- **LaunchAgents** — Auto-start on boot
 
-## 安装后可用命令
-
-```bash
-claude                              # 启动 Claude Code
-openclaw chat                       # 和 OpenClaw 对话
-openclaw status                     # 查看 OpenClaw 状态
-openclaw doctor                     # 诊断问题
-```
-
-## Web 控制台
-
-安装完成后访问 http://127.0.0.1:18789 打开 OpenClaw 控制面板。
-
-## 出了问题怎么办
-
-### 方案 1: 一键修复（桌面快捷方式）
-
-安装后桌面会有两个修复脚本，双击终端图标运行即可：
+## Usage
 
 ```bash
-bash ~/Desktop/repair-openclaw.sh       # 停止→清理→重启（解决 99% 的问题）
+claude                              # Launch Claude Code
+openclaw chat                       # Chat with OpenClaw
+openclaw status                     # Check OpenClaw status
+openclaw doctor                     # Diagnose issues
 ```
 
-### 方案 2: AI 智能修复（推荐）
+## Web Dashboard
 
-让 Claude Code 自动读日志、诊断问题、修复故障：
+After installation, open http://127.0.0.1:18789 in your browser for the OpenClaw control panel.
+
+## Troubleshooting
+
+### Option 1: One-Click Repair (Desktop Shortcut)
+
+Two repair scripts are placed on your Desktop after installation:
 
 ```bash
-bash ~/Desktop/ai-repair-openclaw.sh    # Claude 自动排查+修复，约 1-3 分钟
+bash ~/Desktop/repair-openclaw.sh       # Stop → clean → restart (fixes 99% of issues)
 ```
 
-这会启动 Claude Code，它会自动执行以下操作：
-- 检查 `openclaw status` 和 `openclaw doctor`
-- 读取 gateway/node/chrome 的错误日志
-- 检查 LaunchAgent 和端口状态
-- 验证 AWS 凭证
-- **自动修复发现的问题**
-- 重启所有服务并验证
+### Option 2: AI-Powered Repair (Recommended)
 
-### 方案 3: 查看日志
+Let Claude Code automatically read logs, diagnose issues, and fix them:
 
 ```bash
-tail -50 ~/.openclaw/logs/gateway.log      # Gateway 日志
-tail -50 ~/.openclaw/logs/gateway.err.log  # Gateway 错误日志
-tail -50 ~/.openclaw/logs/guardian.log     # 守护进程日志
+bash ~/Desktop/ai-repair-openclaw.sh    # Claude auto-diagnoses + fixes (~1-3 min)
 ```
 
-### 方案 4: 重新安装
+This launches Claude Code which will automatically:
+- Run `openclaw status` and `openclaw doctor`
+- Read gateway/node/chrome error logs
+- Check LaunchAgent and port status
+- Verify AWS credentials
+- **Auto-fix any issues found**
+- Restart all services and verify
 
-再跑一次 setup.sh 即可，已安装的组件会自动跳过。
+### Option 3: Check Logs
 
-## 安全说明
+```bash
+tail -50 ~/.openclaw/logs/gateway.log      # Gateway log
+tail -50 ~/.openclaw/logs/gateway.err.log  # Gateway error log
+tail -50 ~/.openclaw/logs/guardian.log     # Guardian daemon log
+```
 
-- AWS 密钥只存在本地 `~/.aws/credentials`，不会上传
-- Gateway Token 自动生成，绑定 loopback（只能本机访问）
-- 不包含任何硬编码密钥
-- 所有服务只监听 127.0.0.1
+### Option 4: Reinstall
 
-## 文件结构
+Just run `setup.sh` again — already-installed components will be skipped.
+
+## Security
+
+- AWS credentials stay local in `~/.aws/credentials`, never uploaded
+- Gateway token is auto-generated, bound to loopback (localhost only)
+- No hardcoded secrets in the script
+- All services listen on 127.0.0.1 only
+
+## File Layout
 
 ```
 ~/Desktop/
-├── repair-openclaw.sh          一键修复脚本（桌面快捷方式）
-└── ai-repair-openclaw.sh       AI 智能修复脚本（桌面快捷方式）
-~/.aws/                         AWS 凭证
-~/.claude/settings.json         Claude Code 配置
-~/.mcp.json                     MCP 服务器配置
+├── repair-openclaw.sh          One-click repair (desktop shortcut)
+└── ai-repair-openclaw.sh       AI-powered repair (desktop shortcut)
+~/.aws/                         AWS credentials
+~/.claude/settings.json         Claude Code config
+~/.mcp.json                     MCP server config
 ~/.openclaw/
-├── openclaw.json               OpenClaw 主配置
-├── chrome-profile/             Chrome CDP 专用数据目录
-├── logs/                       所有日志
+├── openclaw.json               OpenClaw main config
+├── chrome-profile/             Chrome CDP data directory
+├── logs/                       All logs
 ├── scripts/
-│   ├── guardian-check.sh       守护进程脚本
-│   ├── repair.sh              紧急修复脚本
-│   └── ai-repair.sh           AI 智能修复脚本
-└── workspace/                  OpenClaw 工作区
-    └── CLAUDE.md              工作区说明
+│   ├── guardian-check.sh       Guardian daemon script
+│   ├── repair.sh              Emergency repair script
+│   └── ai-repair.sh           AI-powered repair script
+└── workspace/                  OpenClaw workspace
+    └── CLAUDE.md              Workspace instructions
 ~/Library/LaunchAgents/
-├── ai.openclaw.chrome.plist    Chrome CDP 自启动（端口 9222）
-├── ai.openclaw.gateway.plist   Gateway 自启动
-├── ai.openclaw.node.plist      Node 自启动
-└── ai.openclaw.guardian.plist  守护进程自启动
+├── ai.openclaw.chrome.plist    Chrome CDP auto-start (port 9222)
+├── ai.openclaw.gateway.plist   Gateway auto-start
+├── ai.openclaw.node.plist      Node auto-start
+└── ai.openclaw.guardian.plist  Guardian daemon auto-start
 ```
+
+## License
+
+MIT
