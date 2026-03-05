@@ -157,6 +157,42 @@ tail -50 ~/.openclaw/logs/guardian.log     # 守护进程日志
 
 再跑一次 setup.sh 即可，已安装的组件会自动跳过。
 
+## OpenClaw Skills（推荐安装）
+
+本仓库 `skills/` 目录包含三个预置 Skill，安装后可以显著提升 OpenClaw + Claude Code 的能力：
+
+| Skill | 说明 |
+|-------|------|
+| `claude-code` | 教 OpenClaw 如何高效调度 Claude Code：任务拆分、渐进式交付、Slot Machine 恢复、终端交互、调试流程 |
+| `aws-infra` | 通过 AWS CLI 进行基础设施查询、审计、监控，默认只读，写操作需确认 |
+| `skill-vetting` | 从 ClawHub 安装第三方 Skill 前的安全审查工具，含自动扫描器和 prompt injection 防护 |
+
+### 安装方法
+
+在终端打开 Claude Code，让它帮你安装：
+
+```bash
+claude
+```
+
+然后输入：
+
+```
+把 https://github.com/cncoder/oneclaw 仓库里 skills/ 目录下的三个 skill
+（claude-code、aws-infra、skill-vetting）安装到 OpenClaw。
+把每个 skill 的目录复制到 ~/.openclaw/workspace/skills/ 下即可。
+```
+
+或者手动复制：
+
+```bash
+git clone --depth 1 https://github.com/cncoder/oneclaw.git /tmp/oneclaw
+cp -r /tmp/oneclaw/skills/claude-code ~/.openclaw/workspace/skills/
+cp -r /tmp/oneclaw/skills/aws-infra ~/.openclaw/workspace/skills/
+cp -r /tmp/oneclaw/skills/skill-vetting ~/.openclaw/workspace/skills/
+rm -rf /tmp/oneclaw
+```
+
 ## 安全说明
 
 - AWS 密钥只存在本地 `~/.aws/credentials`，不会上传
