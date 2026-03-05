@@ -375,6 +375,34 @@ else
     warn "AWS credential verification failed. You may need to fix ~/.aws/credentials later."
 fi
 
+# Verify Bedrock endpoint is reachable in the chosen region
+info "Verifying Bedrock endpoint in ${AWS_BEDROCK_REGION}..."
+BEDROCK_TEST_PREFIX="us"
+case "$AWS_BEDROCK_REGION" in
+    eu-*)  BEDROCK_TEST_PREFIX="eu" ;;
+    ap-*)  BEDROCK_TEST_PREFIX="ap" ;;
+esac
+
+if aws bedrock-runtime invoke-model \
+    --model-id "${BEDROCK_TEST_PREFIX}.anthropic.claude-haiku-4-5-20251001-v1:0" \
+    --region "$AWS_BEDROCK_REGION" \
+    --body '{"anthropic_version":"bedrock-2023-05-31","max_tokens":16,"messages":[{"role":"user","content":"hi"}]}' \
+    --content-type "application/json" \
+    /dev/null >/dev/null 2>&1; then
+    success "Bedrock endpoint verified in ${AWS_BEDROCK_REGION} (model accessible)"
+else
+    warn "Bedrock endpoint test failed in ${AWS_BEDROCK_REGION}."
+    echo -e "  ${YELLOW}Possible causes:${NC}"
+    echo -e "  1. AWS credentials (Access Key / Secret Key) are incorrect"
+    echo -e "  2. Bedrock model access is not enabled in this region"
+    echo -e "     → Go to AWS Console → Bedrock → Model access → Enable Claude models"
+    echo -e "  3. Region '${AWS_BEDROCK_REGION}' does not support Bedrock"
+    echo -e "     → Try us-west-2 (recommended) or us-east-1"
+    echo -e ""
+    echo -e "  ${CYAN}Setup will continue, but OpenClaw/Claude Code may not work until this is fixed.${NC}"
+    echo -e "  ${CYAN}After fixing, run: ${GREEN}bash ~/Desktop/ask-claude.sh${NC} and ask Claude to help.\n"
+fi
+
 # ============================================================================
 # Step 6: Configure Claude Code
 # ============================================================================
@@ -519,9 +547,12 @@ mkdir -p "$OPENCLAW_DIR/logs"
 mkdir -p "$OPENCLAW_DIR/scripts"
 mkdir -p "$OPENCLAW_DIR/workspace"
 
-# Determine OpenClaw Bedrock model prefix
-# OpenClaw uses global inference profiles
-OC_MODEL_PREFIX="global"
+# Determine OpenClaw Bedrock model prefix (must match region)
+OC_MODEL_PREFIX="us"
+case "$AWS_BEDROCK_REGION" in
+    eu-*)  OC_MODEL_PREFIX="eu" ;;
+    ap-*)  OC_MODEL_PREFIX="ap" ;;
+esac
 
 # Backup existing OpenClaw config if present
 if [ -f "$OPENCLAW_DIR/openclaw.json" ]; then
