@@ -278,10 +278,24 @@ CC_BEDROCK_REGION="$AWS_BEDROCK_REGION"
 
 # Discord (optional)
 echo -e "\n${CYAN}--- Discord 机器人（可选，按回车跳过） ---${NC}"
+echo -e "  OpenClaw 可以连接 Discord，让你在 Discord 里和 AI 对话、接收告警通知。"
+echo -e "  如果暂时不需要，两项都直接按回车跳过，以后可以再配。\n"
+echo -e "  ${BOLD}如何获取 Discord Bot Token：${NC}"
+echo -e "  1. 打开 ${CYAN}https://discord.com/developers/applications${NC}"
+echo -e "  2. 点 ${GREEN}New Application${NC} → 输入名字（如 OpenClaw）→ Create"
+echo -e "  3. 左侧点 ${GREEN}Bot${NC} → 点 ${GREEN}Reset Token${NC} → 复制 Token"
+echo -e "  4. 往下打开 ${GREEN}MESSAGE CONTENT INTENT${NC} 开关"
+echo -e "  5. 左侧点 ${GREEN}OAuth2${NC} → SCOPES 勾选 ${GREEN}bot${NC}"
+echo -e "     BOT PERMISSIONS 勾选: Send Messages, Read Message History, Read Messages/View Channels"
+echo -e "  6. 复制生成的 URL，在浏览器打开，选择你的服务器，点 Authorize\n"
 echo -en "${YELLOW}Discord Bot Token（没有就直接回车）: ${NC}"
 read -r DISCORD_BOT_TOKEN </dev/tty
 DISCORD_BOT_TOKEN="${DISCORD_BOT_TOKEN:-}"
 
+echo -e "\n  ${BOLD}如何获取 Discord Webhook URL：${NC}"
+echo -e "  1. 打开 Discord → 进入你想收通知的频道"
+echo -e "  2. 点频道名旁的 ⚙️ 设置 → 左侧 ${GREEN}Integrations${NC} → ${GREEN}Webhooks${NC}"
+echo -e "  3. 点 ${GREEN}New Webhook${NC} → 取名（如 OpenClaw Alert）→ ${GREEN}Copy Webhook URL${NC}\n"
 echo -en "${YELLOW}Discord Webhook URL（用于异常告警，没有就直接回车）: ${NC}"
 read -r DISCORD_WEBHOOK_URL </dev/tty
 DISCORD_WEBHOOK_URL="${DISCORD_WEBHOOK_URL:-}"
