@@ -21,6 +21,14 @@ curl -O https://raw.githubusercontent.com/cncoder/oneclaw/main/setup.sh
 bash setup.sh
 ```
 
+## 系统要求
+
+- **macOS 13 (Ventura)** 或更高版本
+- **Apple Silicon**（M1 / M2 / M3 / M4）— 不支持 Intel Mac
+- **16 GB 内存**（推荐，最低 8 GB）
+- **约 5 GB 可用磁盘空间**（Homebrew、Node.js、Chrome、OpenClaw 等）
+- 安装过程需要联网
+
 ## 你需要准备什么
 
 | 项目 | 必须？ | 说明 |
@@ -194,6 +202,31 @@ cp -r /tmp/oneclaw/skills/chrome-devtools ~/.openclaw/workspace/skills/
 cp -r /tmp/oneclaw/skills/skill-vetting ~/.openclaw/workspace/skills/
 rm -rf /tmp/oneclaw
 ```
+
+## 卸载
+
+完全移除 OneClaw 及所有组件：
+
+```bash
+# 1. 停止并移除 LaunchAgent
+launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/ai.openclaw.*.plist 2>/dev/null
+rm -f ~/Library/LaunchAgents/ai.openclaw.*.plist
+
+# 2. 移除 OpenClaw
+openclaw uninstall 2>/dev/null   # 如果你的版本支持此命令
+rm -rf ~/.openclaw
+
+# 3. 移除桌面快捷方式
+rm -f ~/Desktop/repair-openclaw.sh ~/Desktop/ai-repair-openclaw.sh
+
+# 4.（可选）移除 Claude Code
+npm uninstall -g @anthropic-ai/claude-code 2>/dev/null
+
+# 5.（可选）移除 MCP 配置
+# 检查并编辑 ~/.mcp.json — 删除 OneClaw 添加的条目
+```
+
+> Homebrew、Node.js、AWS CLI、uv 是通用工具 — 只有确认没有其他项目依赖时才卸载。
 
 ## 安全说明
 

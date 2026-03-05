@@ -21,6 +21,14 @@ curl -O https://raw.githubusercontent.com/cncoder/oneclaw/main/setup.sh
 bash setup.sh
 ```
 
+## System Requirements
+
+- **macOS 13 (Ventura)** or later
+- **Apple Silicon** (M1 / M2 / M3 / M4) — Intel Macs are not supported
+- **16 GB RAM** recommended (8 GB minimum)
+- **~5 GB free disk space** (Homebrew, Node.js, Chrome, OpenClaw, etc.)
+- Internet connection during installation
+
 ## Prerequisites
 
 | Item | Required? | Description |
@@ -194,6 +202,31 @@ cp -r /tmp/oneclaw/skills/chrome-devtools ~/.openclaw/workspace/skills/
 cp -r /tmp/oneclaw/skills/skill-vetting ~/.openclaw/workspace/skills/
 rm -rf /tmp/oneclaw
 ```
+
+## Uninstall
+
+To completely remove OneClaw and all its components:
+
+```bash
+# 1. Stop and remove LaunchAgents
+launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/ai.openclaw.*.plist 2>/dev/null
+rm -f ~/Library/LaunchAgents/ai.openclaw.*.plist
+
+# 2. Remove OpenClaw
+openclaw uninstall 2>/dev/null   # if supported by your version
+rm -rf ~/.openclaw
+
+# 3. Remove desktop shortcuts
+rm -f ~/Desktop/repair-openclaw.sh ~/Desktop/ai-repair-openclaw.sh
+
+# 4. (Optional) Remove Claude Code
+npm uninstall -g @anthropic-ai/claude-code 2>/dev/null
+
+# 5. (Optional) Remove MCP config added by setup
+# Review and edit ~/.mcp.json — remove the entries added by OneClaw
+```
+
+> Homebrew, Node.js, AWS CLI, and uv are shared tools — only remove them if no other project depends on them.
 
 ## Security
 
