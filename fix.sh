@@ -35,61 +35,61 @@ fi
 # 2. Fix Gateway Token
 # ============================================================================
 info "Checking Gateway Token..."
-if grep -q '"token": ""' "$CONFIG" 2>/dev/null || ! grep -q '"token"' "$CONFIG" 2>/dev/null; then
-    NEW_TOKEN=$(openssl rand -hex 24)
-    info "Generating new Gateway Token..."
 
-    if command -v python3 &>/dev/null; then
-        python3 -c "
+NEW_TOKEN=$(openssl rand -hex 24)
+
+# Use python3 to reliably read JSON and check/fix token
+TOKEN_STATUS=$(python3 -c "
 import json, sys
-with open('$CONFIG', 'r') as f:
-    cfg = json.load(f)
-if 'gateway' not in cfg:
-    cfg['gateway'] = {}
-if 'auth' not in cfg['gateway']:
-    cfg['gateway']['auth'] = {}
-cfg['gateway']['auth']['token'] = '$NEW_TOKEN'
-cfg['gateway']['auth']['mode'] = 'token'
-with open('$CONFIG', 'w') as f:
-    json.dump(cfg, f, indent=2)
-"
-    else
-        # Fallback: sed replace
-        if grep -q '"token":' "$CONFIG"; then
-            sed -i '' "s/\"token\": *\"[^\"]*\"/\"token\": \"$NEW_TOKEN\"/" "$CONFIG"
-        else
-            warn "Cannot auto-fix token without python3. Manual fix needed."
-            echo -e "  Add this to gateway.auth in $CONFIG:"
-            echo -e "  \"token\": \"$NEW_TOKEN\""
-        fi
-    fi
-    success "Gateway Token set: ${NEW_TOKEN:0:8}..."
-    echo -e "  ${YELLOW}Save this token if you need it for manual access:${NC}"
-    echo -e "  ${BOLD}$NEW_TOKEN${NC}\n"
-else
-    EXISTING=$(grep -o '"token": *"[^"]*"' "$CONFIG" | head -1 | sed 's/"token": *"//' | sed 's/"//')
-    if [ -n "$EXISTING" ] && [ "$EXISTING" != '${GATEWAY_TOKEN}' ]; then
+try:
+    with open('$CONFIG', 'r') as f:
+        cfg = json.load(f)
+except json.JSONDecodeError:
+    print('BROKEN_JSON')
+    sys.exit(0)
+
+token = cfg.get('gateway', {}).get('auth', {}).get('token', '')
+# Check if token is empty, placeholder, or missing
+if not token or '\${' in token or len(token) < 8:
+    # Fix it
+    if 'gateway' not in cfg:
+        cfg['gateway'] = {}
+    if 'auth' not in cfg['gateway']:
+        cfg['gateway']['auth'] = {}
+    cfg['gateway']['auth']['token'] = '$NEW_TOKEN'
+    cfg['gateway']['auth']['mode'] = 'token'
+    with open('$CONFIG', 'w') as f:
+        json.dump(cfg, f, indent=2)
+    print('FIXED')
+else:
+    print('OK:' + token)
+" 2>&1)
+
+case "$TOKEN_STATUS" in
+    FIXED)
+        success "Gateway Token generated and injected!"
+        echo ""
+        echo -e "  ${BOLD}${YELLOW}Gateway Token:${NC}"
+        echo -e "  ${BOLD}${GREEN}$NEW_TOKEN${NC}"
+        echo ""
+        echo -e "  ${YELLOW}Please save this token. You need it to log in to the web console.${NC}"
+        echo ""
+        ;;
+    OK:*)
+        EXISTING="${TOKEN_STATUS#OK:}"
         success "Gateway Token already set: ${EXISTING:0:8}..."
-    else
-        # Token contains unexpanded variable ${GATEWAY_TOKEN}
-        NEW_TOKEN=$(openssl rand -hex 24)
-        info "Token contains placeholder, generating real token..."
-        if command -v python3 &>/dev/null; then
-            python3 -c "
-import json
-with open('$CONFIG', 'r') as f:
-    cfg = json.load(f)
-cfg['gateway']['auth']['token'] = '$NEW_TOKEN'
-with open('$CONFIG', 'w') as f:
-    json.dump(cfg, f, indent=2)
-"
-        else
-            sed -i '' "s/\\\${GATEWAY_TOKEN}/$NEW_TOKEN/" "$CONFIG"
-        fi
-        success "Gateway Token generated: ${NEW_TOKEN:0:8}..."
-        echo -e "  ${BOLD}$NEW_TOKEN${NC}\n"
-    fi
-fi
+        echo ""
+        echo -e "  ${BOLD}${YELLOW}Your Gateway Token:${NC}"
+        echo -e "  ${BOLD}${GREEN}$EXISTING${NC}"
+        echo ""
+        ;;
+    BROKEN_JSON)
+        error "openclaw.json is invalid JSON. Please re-run setup.sh."
+        ;;
+    *)
+        warn "Unexpected result: $TOKEN_STATUS"
+        ;;
+esac
 
 # ============================================================================
 # 3. Fix Chrome CDP
