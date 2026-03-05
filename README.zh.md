@@ -55,6 +55,42 @@ openclaw doctor                     # 诊断问题
 
 安装完成后访问 http://127.0.0.1:18789 打开 OpenClaw 控制面板。
 
+## 手动安装（一键脚本失败时）
+
+如果脚本在某一步失败了，可以手动安装对应组件后重新运行脚本——已安装的会自动跳过。
+
+```bash
+# 1. Xcode Command Line Tools
+xcode-select --install
+
+# 2. Homebrew
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+echo 'eval "$(/opt/homebrew/bin/brew shellenv)"' >> ~/.zshrc
+eval "$(/opt/homebrew/bin/brew shellenv)"
+
+# 3. Node.js + pnpm
+brew install node
+npm install -g pnpm
+
+# 4. uv（Python 包管理器）
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# 5. AWS CLI
+brew install awscli
+
+# 6. Claude Code
+curl -fsSL https://claude.ai/install.sh | bash
+
+# 7. OpenClaw
+curl -fsSL https://openclaw.ai/install.sh | bash
+```
+
+手动装完后，重新运行脚本完成配置：
+
+```bash
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/cncoder/oneclaw/main/setup.sh)"
+```
+
 ## 出了问题怎么办
 
 ### 方案 1: 一键修复（桌面快捷方式）

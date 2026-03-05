@@ -104,7 +104,17 @@ if ! xcode-select -p >/dev/null 2>&1; then
     echo -e "${YELLOW}请在弹出的对话框中点击「安装」，等待安装完成后按回车继续...${NC}"
     read -r </dev/tty
     if ! xcode-select -p >/dev/null 2>&1; then
-        error "Xcode Command Line Tools 安装失败，请手动运行: xcode-select --install"
+        echo ""
+        echo -e "${RED}${BOLD}Xcode Command Line Tools 安装失败。${NC}"
+        echo -e "${YELLOW}请手动执行以下命令，安装完成后重新运行本脚本：${NC}"
+        echo ""
+        echo -e "  ${CYAN}xcode-select --install${NC}"
+        echo ""
+        echo -e "  如果弹窗没出现，可以从 Apple 开发者网站下载："
+        echo -e "  ${CYAN}https://developer.apple.com/download/more/${NC}"
+        echo -e "  搜索 \"Command Line Tools\"，下载对应 macOS 版本的安装包。"
+        echo ""
+        exit 1
     fi
     success "Xcode Command Line Tools installed"
 else
@@ -120,10 +130,29 @@ if check_command brew; then
     success "Homebrew already installed: $(brew --version | head -1)"
 else
     info "Installing Homebrew..."
-    /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-    # Add to PATH for this session
-    eval "$(/opt/homebrew/bin/brew shellenv)"
-    success "Homebrew installed"
+    if /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"; then
+        eval "$(/opt/homebrew/bin/brew shellenv)"
+        success "Homebrew installed"
+    else
+        echo ""
+        echo -e "${RED}${BOLD}Homebrew 自动安装失败。${NC}"
+        echo -e "${YELLOW}请手动执行以下命令安装 Homebrew，安装完成后重新运行本脚本：${NC}"
+        echo ""
+        echo -e "  ${CYAN}1. 安装 Homebrew:${NC}"
+        echo -e "     /bin/bash -c \"\$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\""
+        echo ""
+        echo -e "  ${CYAN}2. 添加到 PATH（安装完 Homebrew 后执行）:${NC}"
+        echo -e "     echo 'eval \"\$(/opt/homebrew/bin/brew shellenv)\"' >> ~/.zshrc"
+        echo -e "     eval \"\$(/opt/homebrew/bin/brew shellenv)\""
+        echo ""
+        echo -e "  ${CYAN}3. 验证安装:${NC}"
+        echo -e "     brew --version"
+        echo ""
+        echo -e "  ${CYAN}4. 重新运行本脚本:${NC}"
+        echo -e "     bash setup.sh"
+        echo ""
+        exit 1
+    fi
 fi
 
 # Ensure brew is in PATH
@@ -141,8 +170,12 @@ if check_command node; then
     success "Node.js already installed: $(node --version)"
 else
     info "Installing Node.js via Homebrew..."
-    brew install node
-    success "Node.js installed: $(node --version)"
+    if brew install node; then
+        success "Node.js installed: $(node --version)"
+    else
+        echo -e "${RED}Node.js 安装失败。请手动运行: ${CYAN}brew install node${NC}"
+        exit 1
+    fi
 fi
 
 # pnpm
@@ -150,12 +183,15 @@ if check_command pnpm; then
     success "pnpm already installed: $(pnpm --version)"
 else
     info "Installing pnpm..."
-    npm install -g pnpm
-    # Setup pnpm global bin
-    pnpm setup 2>/dev/null || true
-    export PNPM_HOME="$HOME/Library/pnpm"
-    export PATH="$PNPM_HOME:$PATH"
-    success "pnpm installed"
+    if npm install -g pnpm; then
+        pnpm setup 2>/dev/null || true
+        export PNPM_HOME="$HOME/Library/pnpm"
+        export PATH="$PNPM_HOME:$PATH"
+        success "pnpm installed"
+    else
+        echo -e "${RED}pnpm 安装失败。请手动运行: ${CYAN}npm install -g pnpm${NC}"
+        exit 1
+    fi
 fi
 
 # uv (for Python MCP servers)
@@ -163,9 +199,13 @@ if check_command uv; then
     success "uv already installed: $(uv --version)"
 else
     info "Installing uv (Python package manager)..."
-    curl -LsSf https://astral.sh/uv/install.sh | sh
-    export PATH="$HOME/.local/bin:$PATH"
-    success "uv installed"
+    if curl -LsSf https://astral.sh/uv/install.sh | sh; then
+        export PATH="$HOME/.local/bin:$PATH"
+        success "uv installed"
+    else
+        echo -e "${RED}uv 安装失败。请手动运行: ${CYAN}curl -LsSf https://astral.sh/uv/install.sh | sh${NC}"
+        exit 1
+    fi
 fi
 
 # AWS CLI
@@ -173,8 +213,12 @@ if check_command aws; then
     success "AWS CLI already installed: $(aws --version 2>&1 | head -1)"
 else
     info "Installing AWS CLI..."
-    brew install awscli
-    success "AWS CLI installed: $(aws --version 2>&1 | head -1)"
+    if brew install awscli; then
+        success "AWS CLI installed: $(aws --version 2>&1 | head -1)"
+    else
+        echo -e "${RED}AWS CLI 安装失败。请手动运行: ${CYAN}brew install awscli${NC}"
+        exit 1
+    fi
 fi
 
 # Google Chrome (needed for chrome-devtools MCP)
@@ -183,8 +227,11 @@ if [ -d "$CHROME_APP" ]; then
     success "Google Chrome already installed"
 else
     info "Installing Google Chrome..."
-    brew install --cask google-chrome
-    success "Google Chrome installed"
+    if brew install --cask google-chrome; then
+        success "Google Chrome installed"
+    else
+        warn "Chrome 自动安装失败。请手动从 https://www.google.com/chrome/ 下载安装，然后重新运行本脚本。"
+    fi
 fi
 
 # ============================================================================
@@ -196,9 +243,13 @@ if check_command claude; then
     success "Claude Code already installed: $(claude --version 2>/dev/null || echo 'installed')"
 else
     info "Installing Claude Code..."
-    curl -fsSL https://claude.ai/install.sh | bash
-    export PATH="$HOME/.local/bin:$PATH"
-    success "Claude Code installed"
+    if curl -fsSL https://claude.ai/install.sh | bash; then
+        export PATH="$HOME/.local/bin:$PATH"
+        success "Claude Code installed"
+    else
+        echo -e "${RED}Claude Code 安装失败。请手动运行: ${CYAN}curl -fsSL https://claude.ai/install.sh | bash${NC}"
+        exit 1
+    fi
 fi
 
 # ============================================================================
@@ -424,14 +475,17 @@ if check_command openclaw; then
     success "OpenClaw already installed: $(openclaw --version 2>/dev/null || echo 'installed')"
 else
     info "Installing OpenClaw..."
-    curl -fsSL https://openclaw.ai/install.sh | bash
-    # Reload PATH
-    export PATH="$HOME/Library/pnpm:$HOME/.local/bin:$PATH"
-    hash -r 2>/dev/null || true
-    if check_command openclaw; then
-        success "OpenClaw installed"
+    if curl -fsSL https://openclaw.ai/install.sh | bash; then
+        export PATH="$HOME/Library/pnpm:$HOME/.local/bin:$PATH"
+        hash -r 2>/dev/null || true
+        if check_command openclaw; then
+            success "OpenClaw installed"
+        else
+            warn "OpenClaw 已安装但未在 PATH 中。请稍后打开新终端窗口再试。"
+        fi
     else
-        warn "OpenClaw installed but not in PATH yet. You may need to restart your terminal."
+        echo -e "${RED}OpenClaw 安装失败。请手动运行: ${CYAN}curl -fsSL https://openclaw.ai/install.sh | bash${NC}"
+        exit 1
     fi
 fi
 

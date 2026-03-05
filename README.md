@@ -55,6 +55,42 @@ openclaw doctor                     # Diagnose issues
 
 After installation, open http://127.0.0.1:18789 in your browser for the OpenClaw control panel.
 
+## Manual Install (if one-click fails)
+
+If the script fails at a specific step, you can install the prerequisites manually and re-run the script — it will skip anything already installed.
+
+```bash
+# 1. Xcode Command Line Tools
+xcode-select --install
+
+# 2. Homebrew
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+echo 'eval "$(/opt/homebrew/bin/brew shellenv)"' >> ~/.zshrc
+eval "$(/opt/homebrew/bin/brew shellenv)"
+
+# 3. Node.js + pnpm
+brew install node
+npm install -g pnpm
+
+# 4. uv (Python package manager)
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# 5. AWS CLI
+brew install awscli
+
+# 6. Claude Code
+curl -fsSL https://claude.ai/install.sh | bash
+
+# 7. OpenClaw
+curl -fsSL https://openclaw.ai/install.sh | bash
+```
+
+After installing the prerequisites, re-run the setup script to configure everything:
+
+```bash
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/cncoder/oneclaw/main/setup.sh)"
+```
+
 ## Troubleshooting
 
 ### Option 1: One-Click Repair (Desktop Shortcut)
