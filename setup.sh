@@ -1292,6 +1292,33 @@ cp "$OPENCLAW_DIR/scripts/ai-repair.sh" "$HOME/Desktop/ai-repair-openclaw.sh"
 chmod +x "$HOME/Desktop/ai-repair-openclaw.sh"
 success "AI repair script created: ~/Desktop/ai-repair-openclaw.sh (桌面快捷方式)"
 
+# ask-claude.sh — one-click open Claude Code interactive mode
+cat > "$HOME/Desktop/ask-claude.sh" <<'ASKCLAUDE_EOF'
+#!/bin/bash
+# ask-claude.sh — Open Claude Code in interactive mode
+# Just describe your problem in Chinese, Claude will help you fix it.
+
+export PATH="$HOME/.local/bin:$HOME/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
+
+if ! command -v claude >/dev/null 2>&1; then
+    echo "Claude Code not found. Please run: source ~/.zshrc"
+    exit 1
+fi
+
+echo ""
+echo "  Starting Claude Code..."
+echo "  Describe your problem in Chinese, for example:"
+echo "    「OpenClaw 报 AWS 签名错误，帮我修一下」"
+echo "    「Chrome 连不上」"
+echo "    「帮我看看日志哪里出错了」"
+echo ""
+
+cd ~/.openclaw/workspace 2>/dev/null || cd ~
+claude
+ASKCLAUDE_EOF
+chmod +x "$HOME/Desktop/ask-claude.sh"
+success "Ask Claude script created: ~/Desktop/ask-claude.sh (桌面快捷方式)"
+
 # ============================================================================
 # Done!
 # ============================================================================
@@ -1354,4 +1381,15 @@ else
     info "Gateway 尚未就绪，请稍后手动打开: http://127.0.0.1:18789"
 fi
 
-echo -e "${GREEN}享受你的 AI 编程环境吧！${NC}"
+echo -e "${CYAN}${BOLD}遇到任何问题？${NC}"
+echo ""
+echo -e "  打开终端，输入 ${GREEN}${BOLD}claude${NC} 进入 AI 交互模式，直接用中文描述你的问题，比如："
+echo -e "  ${CYAN}「OpenClaw 报 AWS 签名错误，帮我修一下」${NC}"
+echo -e "  ${CYAN}「Chrome 连不上 OpenClaw」${NC}"
+echo -e "  ${CYAN}「帮我检查 AWS 凭证是否正确」${NC}"
+echo ""
+echo -e "  或者双击桌面脚本让 AI 全自动修复："
+echo -e "  ${GREEN}bash ~/Desktop/ai-repair-openclaw.sh${NC}   — AI 自动诊断+修复（约 1-3 分钟）"
+echo -e "  ${GREEN}bash ~/Desktop/repair-openclaw.sh${NC}      — 一键重启所有服务"
+echo ""
+echo -e "${GREEN}${BOLD}享受你的 AI 编程环境吧！${NC}"
