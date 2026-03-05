@@ -185,7 +185,7 @@ From Anthropic Legal + Growth Marketing teams:
 
 ## Terminal Interaction (OpenClaw dispatching Claude Code)
 
-OpenClaw (Lena) dispatches Claude Code through the system terminal. The exact mechanics vary by machine, but the core pattern is the same.
+OpenClaw dispatches Claude Code through the system terminal. The exact mechanics vary by machine, but the core pattern is the same.
 
 ### Launching Claude Code
 
@@ -254,7 +254,7 @@ When encountering repeated errors, add rules to the project's CLAUDE.md:
 ```markdown
 # Tool usage rules
 - pytest: `pytest tests/ -v`, don't `python -m pytest`, don't cd first
-- Delete files: `mv ~/Documents/trashllm/`, never `rm`
+- Delete files: `mv ~/.Trash/`, never `rm`
 - Bash failure → diagnose cause first, don't retry same command
 - Don't cd unnecessarily — use absolute paths
 - Long text: use heredoc or write to file, avoid ultra-long single-line commands

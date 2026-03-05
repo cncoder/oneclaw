@@ -6,15 +6,14 @@
 #   or:  bash setup.sh
 #
 # What it does:
-#   1. Install Homebrew (if missing)
-#   2. Install Node.js, pnpm, uv/uvx, AWS CLI
-#   3. Install Claude Code
-#   4. Install OpenClaw
-#   5. Configure AWS credentials (interactive)
-#   6. Configure Claude Code (Bedrock + MCP servers + plugins)
-#   7. Configure OpenClaw (Bedrock, browser, agents)
-#   8. Set up Guardian watchdog + LaunchAgents (auto-start on boot)
-#   9. Generate a CLAUDE.md for OpenClaw initialization
+#   1. Install Claude Code (no dependencies — your AI assistant for troubleshooting)
+#   2. Collect AWS credentials + configure Claude Code for Bedrock
+#   3. Install Homebrew (if fails, user can run `claude` to fix)
+#   4. Install Node.js, pnpm, uv/uvx, AWS CLI
+#   5. Install OpenClaw
+#   6. Configure OpenClaw (Bedrock, browser, agents)
+#   7. Set up Guardian watchdog + LaunchAgents (auto-start on boot)
+#   8. Generate a CLAUDE.md for OpenClaw initialization
 #
 # Requirements: macOS with Apple Silicon (M1/M2/M3/M4), internet connection
 # ============================================================================
@@ -122,122 +121,12 @@ else
 fi
 
 # ============================================================================
-# Step 1: Homebrew
+# Step 1: Install Claude Code (NO dependencies — install first as safety net)
 # ============================================================================
-step 1 "Install Homebrew"
+step 1 "Install Claude Code"
 
-if check_command brew; then
-    success "Homebrew already installed: $(brew --version | head -1)"
-else
-    info "Installing Homebrew..."
-    if /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"; then
-        eval "$(/opt/homebrew/bin/brew shellenv)"
-        success "Homebrew installed"
-    else
-        echo ""
-        echo -e "${RED}${BOLD}Homebrew 自动安装失败。${NC}"
-        echo -e "${YELLOW}请手动执行以下命令安装 Homebrew，安装完成后重新运行本脚本：${NC}"
-        echo ""
-        echo -e "  ${CYAN}1. 安装 Homebrew:${NC}"
-        echo -e "     /bin/bash -c \"\$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\""
-        echo ""
-        echo -e "  ${CYAN}2. 添加到 PATH（安装完 Homebrew 后执行）:${NC}"
-        echo -e "     echo 'eval \"\$(/opt/homebrew/bin/brew shellenv)\"' >> ~/.zshrc"
-        echo -e "     eval \"\$(/opt/homebrew/bin/brew shellenv)\""
-        echo ""
-        echo -e "  ${CYAN}3. 验证安装:${NC}"
-        echo -e "     brew --version"
-        echo ""
-        echo -e "  ${CYAN}4. 重新运行本脚本:${NC}"
-        echo -e "     bash setup.sh"
-        echo ""
-        exit 1
-    fi
-fi
-
-# Ensure brew is in PATH
-if ! check_command brew; then
-    eval "$(/opt/homebrew/bin/brew shellenv)"
-fi
-
-# ============================================================================
-# Step 2: Core dependencies
-# ============================================================================
-step 2 "Install core dependencies (Node.js, pnpm, uv, AWS CLI)"
-
-# Node.js
-if check_command node; then
-    success "Node.js already installed: $(node --version)"
-else
-    info "Installing Node.js via Homebrew..."
-    if brew install node; then
-        success "Node.js installed: $(node --version)"
-    else
-        echo -e "${RED}Node.js 安装失败。请手动运行: ${CYAN}brew install node${NC}"
-        exit 1
-    fi
-fi
-
-# pnpm
-if check_command pnpm; then
-    success "pnpm already installed: $(pnpm --version)"
-else
-    info "Installing pnpm..."
-    if npm install -g pnpm; then
-        pnpm setup 2>/dev/null || true
-        export PNPM_HOME="$HOME/Library/pnpm"
-        export PATH="$PNPM_HOME:$PATH"
-        success "pnpm installed"
-    else
-        echo -e "${RED}pnpm 安装失败。请手动运行: ${CYAN}npm install -g pnpm${NC}"
-        exit 1
-    fi
-fi
-
-# uv (for Python MCP servers)
-if check_command uv; then
-    success "uv already installed: $(uv --version)"
-else
-    info "Installing uv (Python package manager)..."
-    if curl -LsSf https://astral.sh/uv/install.sh | sh; then
-        export PATH="$HOME/.local/bin:$PATH"
-        success "uv installed"
-    else
-        echo -e "${RED}uv 安装失败。请手动运行: ${CYAN}curl -LsSf https://astral.sh/uv/install.sh | sh${NC}"
-        exit 1
-    fi
-fi
-
-# AWS CLI
-if check_command aws; then
-    success "AWS CLI already installed: $(aws --version 2>&1 | head -1)"
-else
-    info "Installing AWS CLI..."
-    if brew install awscli; then
-        success "AWS CLI installed: $(aws --version 2>&1 | head -1)"
-    else
-        echo -e "${RED}AWS CLI 安装失败。请手动运行: ${CYAN}brew install awscli${NC}"
-        exit 1
-    fi
-fi
-
-# Google Chrome (needed for chrome-devtools MCP)
-CHROME_APP="/Applications/Google Chrome.app"
-if [ -d "$CHROME_APP" ]; then
-    success "Google Chrome already installed"
-else
-    info "Installing Google Chrome..."
-    if brew install --cask google-chrome; then
-        success "Google Chrome installed"
-    else
-        warn "Chrome 自动安装失败。请手动从 https://www.google.com/chrome/ 下载安装，然后重新运行本脚本。"
-    fi
-fi
-
-# ============================================================================
-# Step 3: Install Claude Code
-# ============================================================================
-step 3 "Install Claude Code"
+echo -e "${BOLD}Claude Code 是 AI 编程助手，不依赖 Homebrew，优先安装。${NC}"
+echo -e "后续步骤如果遇到问题，你可以随时打开新终端输入 ${GREEN}claude${NC} 让它帮你修复。\n"
 
 if check_command claude; then
     success "Claude Code already installed: $(claude --version 2>/dev/null || echo 'installed')"
@@ -253,16 +142,17 @@ else
 fi
 
 # ============================================================================
-# Step 4: Collect user configuration
+# Step 2: Collect AWS credentials + Configure Claude Code for Bedrock
 # ============================================================================
-step 4 "配置凭证"
+step 2 "配置 AWS 凭证 + Claude Code"
 
 echo -e "${BOLD}接下来需要输入一些信息来配置环境。${NC}"
 echo -e "所有信息只保存在你的电脑上，不会上传到任何地方。\n"
 
 # AWS credentials
 echo -e "${CYAN}--- AWS 凭证（用于访问 Bedrock Claude 模型） ---${NC}"
-echo -e "  如果你还没有 AWS 密钥，请先到 AWS Console → IAM → Users → Security credentials 创建"
+echo -e "  ${BOLD}没有 AWS 账号？${NC}找帮你装机的人要一组 Access Key 和 Secret Key。"
+echo -e "  ${BOLD}已有账号但没有密钥？${NC}登录 AWS Console → IAM → Users → 你的用户 → Security credentials → Create access key"
 echo ""
 echo -e "  ${BOLD}${YELLOW}IAM 用户需要以下权限（缺一不可）：${NC}"
 echo -e "  ${GREEN}bedrock:InvokeModel${NC}              — 调用模型（Claude Code + OpenClaw 核心）"
@@ -322,41 +212,10 @@ DISCORD_WEBHOOK_URL="${DISCORD_WEBHOOK_URL:-}"
 GATEWAY_TOKEN=$(openssl rand -hex 24)
 info "已自动生成 Gateway 安全令牌"
 
-
-# ============================================================================
-# Step 4.5: Ensure PATH is persistent in ~/.zshrc
-# ============================================================================
-ZSHRC="$HOME/.zshrc"
-touch "$ZSHRC"
-
-add_to_zshrc() {
-    local line="$1"
-    # For comments, check exact match; for code lines, check non-comment lines only
-    if [[ "$line" == \#* ]]; then
-        grep -qxF "$line" "$ZSHRC" 2>/dev/null || echo "$line" >> "$ZSHRC"
-    else
-        grep -qxF "$line" "$ZSHRC" 2>/dev/null || echo "$line" >> "$ZSHRC"
-    fi
-}
-
-add_to_zshrc '# Homebrew'
-add_to_zshrc 'eval "$(/opt/homebrew/bin/brew shellenv)"'
-add_to_zshrc '# pnpm'
-add_to_zshrc 'export PNPM_HOME="$HOME/Library/pnpm"'
-add_to_zshrc 'export PATH="$PNPM_HOME:$PATH"'
-add_to_zshrc '# uv / Claude Code / local bin'
-add_to_zshrc 'export PATH="$HOME/.local/bin:$PATH"'
-
-success "PATH 配置已写入 ~/.zshrc（新终端窗口自动生效）"
-
-# ============================================================================
-# Step 5: Configure AWS CLI
-# ============================================================================
-step 5 "Configure AWS credentials"
-
+# --- Write AWS credentials ---
+info "Writing AWS credentials..."
 mkdir -p "$HOME/.aws"
 
-# Write credentials (only if not already configured)
 if [ ! -f "$HOME/.aws/credentials" ] || ! grep -q "aws_access_key_id" "$HOME/.aws/credentials" 2>/dev/null; then
     cat > "$HOME/.aws/credentials" <<EOF
 [default]
@@ -379,59 +238,18 @@ else
     warn "~/.aws/config already exists, not overwriting"
 fi
 
-# Verify AWS access
-info "Verifying AWS credentials..."
-if aws sts get-caller-identity >/dev/null 2>&1; then
-    success "AWS credentials valid: $(aws sts get-caller-identity --query 'Account' --output text)"
-else
-    warn "AWS credential verification failed. You may need to fix ~/.aws/credentials later."
-fi
-
-# Verify Bedrock endpoint is reachable in the chosen region
-info "Verifying Bedrock endpoint in ${AWS_BEDROCK_REGION}..."
-BEDROCK_TEST_PREFIX="us"
-case "$AWS_BEDROCK_REGION" in
-    eu-*)  BEDROCK_TEST_PREFIX="eu" ;;
-    ap-*)  BEDROCK_TEST_PREFIX="ap" ;;
-esac
-
-if aws bedrock-runtime invoke-model \
-    --model-id "${BEDROCK_TEST_PREFIX}.anthropic.claude-haiku-4-5-20251001-v1:0" \
-    --region "$AWS_BEDROCK_REGION" \
-    --body '{"anthropic_version":"bedrock-2023-05-31","max_tokens":16,"messages":[{"role":"user","content":"hi"}]}' \
-    --content-type "application/json" \
-    /dev/null >/dev/null 2>&1; then
-    success "Bedrock endpoint verified in ${AWS_BEDROCK_REGION} (model accessible)"
-else
-    warn "Bedrock endpoint test failed in ${AWS_BEDROCK_REGION}."
-    echo -e "  ${YELLOW}Possible causes:${NC}"
-    echo -e "  1. AWS credentials (Access Key / Secret Key) are incorrect"
-    echo -e "  2. Bedrock model access is not enabled in this region"
-    echo -e "     → Go to AWS Console → Bedrock → Model access → Enable Claude models"
-    echo -e "  3. Region '${AWS_BEDROCK_REGION}' does not support Bedrock"
-    echo -e "     → Try us-west-2 (recommended) or us-east-1"
-    echo -e ""
-    echo -e "  ${CYAN}Setup will continue, but OpenClaw/Claude Code may not work until this is fixed.${NC}"
-    echo -e "  ${CYAN}After fixing, run: ${GREEN}bash ~/Desktop/ask-claude.sh${NC} and ask Claude to help.\n"
-fi
-
-# ============================================================================
-# Step 6: Configure Claude Code
-# ============================================================================
-step 6 "Configure Claude Code for Bedrock"
+# --- Configure Claude Code for Bedrock ---
+info "Configuring Claude Code for Bedrock..."
 
 CLAUDE_DIR="$HOME/.claude"
 mkdir -p "$CLAUDE_DIR"
 
-# Use global cross-region inference profiles (works with any region)
-# Default model: Opus 4.6 (best reasoning), subagent: Sonnet 4.6 (fast + capable)
 PROFILE_PREFIX="us"
 case "$CC_BEDROCK_REGION" in
     eu-*)  PROFILE_PREFIX="eu" ;;
     ap-*)  PROFILE_PREFIX="ap" ;;
 esac
 
-# Backup existing config if present
 if [ -f "$CLAUDE_DIR/settings.json" ]; then
     cp "$CLAUDE_DIR/settings.json" "$CLAUDE_DIR/settings.json.bak.$(date +%s)"
     warn "已有 settings.json 已备份为 settings.json.bak.*"
@@ -499,13 +317,11 @@ cat > "$CLAUDE_DIR/settings.json" <<SETTINGS_EOF
 SETTINGS_EOF
 success "Claude Code settings.json written"
 
-# Backup existing MCP config if present
 if [ -f "$HOME/.mcp.json" ]; then
     cp "$HOME/.mcp.json" "$HOME/.mcp.json.bak.$(date +%s)"
     warn "已有 .mcp.json 已备份为 .mcp.json.bak.*"
 fi
 
-# MCP servers config
 cat > "$HOME/.mcp.json" <<MCP_EOF
 {
   "mcpServers": {
@@ -526,10 +342,204 @@ cat > "$HOME/.mcp.json" <<MCP_EOF
 MCP_EOF
 success "MCP servers config written to ~/.mcp.json"
 
+echo ""
+echo -e "${GREEN}${BOLD}Claude Code 已配置完成，可以随时使用！${NC}"
+echo -e "如果后续步骤遇到问题，打开新终端窗口输入 ${CYAN}claude${NC} 让它帮你排查。"
+echo ""
+
 # ============================================================================
-# Step 7: Install OpenClaw
+# Step 3: Homebrew (if fails, user has Claude Code as safety net)
 # ============================================================================
-step 7 "Install OpenClaw"
+step 3 "Install Homebrew"
+
+HOMEBREW_FAILED=false
+if check_command brew; then
+    success "Homebrew already installed: $(brew --version | head -1)"
+else
+    info "Installing Homebrew..."
+    if /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"; then
+        eval "$(/opt/homebrew/bin/brew shellenv)"
+        success "Homebrew installed"
+    else
+        HOMEBREW_FAILED=true
+        echo ""
+        echo -e "${RED}${BOLD}Homebrew 自动安装失败。${NC}"
+        echo -e "${GREEN}${BOLD}好消息：Claude Code 已经装好了！${NC}你可以让它帮你修。"
+        echo ""
+        echo -e "  ${CYAN}方法 1（推荐）：打开新终端窗口，输入：${NC}"
+        echo -e "     ${GREEN}claude${NC}"
+        echo -e "  然后告诉它："帮我安装 Homebrew，安装完后继续运行 setup.sh""
+        echo ""
+        echo -e "  ${CYAN}方法 2（手动）：${NC}"
+        echo -e "     /bin/bash -c \"\$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\""
+        echo -e "     echo 'eval \"\$(/opt/homebrew/bin/brew shellenv)\"' >> ~/.zshrc"
+        echo -e "     eval \"\$(/opt/homebrew/bin/brew shellenv)\""
+        echo ""
+        echo -e "  ${CYAN}修好后重新运行本脚本：${NC}"
+        echo -e "     ${GREEN}bash setup.sh${NC}"
+        echo ""
+        exit 1
+    fi
+fi
+
+# Ensure brew is in PATH
+if ! check_command brew; then
+    eval "$(/opt/homebrew/bin/brew shellenv)"
+fi
+
+# ============================================================================
+# Step 4: Core dependencies (Node.js, pnpm, uv, AWS CLI, Chrome)
+# ============================================================================
+step 4 "Install core dependencies (Node.js, pnpm, uv, AWS CLI)"
+
+# Node.js
+if check_command node; then
+    success "Node.js already installed: $(node --version)"
+else
+    info "Installing Node.js via Homebrew..."
+    if brew install node; then
+        success "Node.js installed: $(node --version)"
+    else
+        echo -e "${RED}Node.js 安装失败。${NC}你可以打开新终端输入 ${GREEN}claude${NC} 让它帮你修，或手动运行: ${CYAN}brew install node${NC}"
+        exit 1
+    fi
+fi
+
+# pnpm
+if check_command pnpm; then
+    success "pnpm already installed: $(pnpm --version)"
+else
+    info "Installing pnpm..."
+    if npm install -g pnpm; then
+        pnpm setup 2>/dev/null || true
+        export PNPM_HOME="$HOME/Library/pnpm"
+        export PATH="$PNPM_HOME:$PATH"
+        success "pnpm installed"
+    else
+        echo -e "${RED}pnpm 安装失败。${NC}你可以打开新终端输入 ${GREEN}claude${NC} 让它帮你修，或手动运行: ${CYAN}npm install -g pnpm${NC}"
+        exit 1
+    fi
+fi
+
+# uv (for Python MCP servers)
+if check_command uv; then
+    success "uv already installed: $(uv --version)"
+else
+    info "Installing uv (Python package manager)..."
+    if curl -LsSf https://astral.sh/uv/install.sh | sh; then
+        export PATH="$HOME/.local/bin:$PATH"
+        success "uv installed"
+    else
+        echo -e "${RED}uv 安装失败。${NC}你可以打开新终端输入 ${GREEN}claude${NC} 让它帮你修，或手动运行: ${CYAN}curl -LsSf https://astral.sh/uv/install.sh | sh${NC}"
+        exit 1
+    fi
+fi
+
+# AWS CLI
+if check_command aws; then
+    success "AWS CLI already installed: $(aws --version 2>&1 | head -1)"
+else
+    info "Installing AWS CLI..."
+    if brew install awscli; then
+        success "AWS CLI installed: $(aws --version 2>&1 | head -1)"
+    else
+        echo -e "${RED}AWS CLI 安装失败。${NC}你可以打开新终端输入 ${GREEN}claude${NC} 让它帮你修，或手动运行: ${CYAN}brew install awscli${NC}"
+        exit 1
+    fi
+fi
+
+# Google Chrome (needed for chrome-devtools MCP)
+CHROME_APP="/Applications/Google Chrome.app"
+if [ -d "$CHROME_APP" ]; then
+    success "Google Chrome already installed"
+else
+    info "Installing Google Chrome..."
+    if brew install --cask google-chrome; then
+        success "Google Chrome installed"
+    else
+        warn "Chrome 自动安装失败。请手动从 https://www.google.com/chrome/ 下载安装，然后重新运行本脚本。"
+    fi
+fi
+
+# Verify AWS credentials (now that AWS CLI is available)
+info "Verifying AWS credentials..."
+if aws sts get-caller-identity >/dev/null 2>&1; then
+    success "AWS credentials valid: $(aws sts get-caller-identity --query 'Account' --output text)"
+else
+    warn "AWS credential verification failed. You may need to fix ~/.aws/credentials later."
+fi
+
+# Verify Bedrock endpoint
+info "Verifying Bedrock endpoint in ${AWS_BEDROCK_REGION}..."
+BEDROCK_TEST_PREFIX="us"
+case "$AWS_BEDROCK_REGION" in
+    eu-*)  BEDROCK_TEST_PREFIX="eu" ;;
+    ap-*)  BEDROCK_TEST_PREFIX="ap" ;;
+esac
+
+if aws bedrock-runtime invoke-model \
+    --model-id "${BEDROCK_TEST_PREFIX}.anthropic.claude-haiku-4-5-20251001-v1:0" \
+    --region "$AWS_BEDROCK_REGION" \
+    --body '{"anthropic_version":"bedrock-2023-05-31","max_tokens":16,"messages":[{"role":"user","content":"hi"}]}' \
+    --content-type "application/json" \
+    /dev/null >/dev/null 2>&1; then
+    success "Bedrock endpoint verified in ${AWS_BEDROCK_REGION} (model accessible)"
+else
+    warn "Bedrock 权限检测失败（${AWS_BEDROCK_REGION}）"
+    echo ""
+    echo -e "  ${YELLOW}${BOLD}⚠ 你的 AWS 账号可能缺少 Bedrock 权限，Claude Code 和 OpenClaw 将无法正常工作。${NC}"
+    echo ""
+    echo -e "  ${BOLD}请检查以下几项：${NC}"
+    echo ""
+    echo -e "  ${CYAN}1. IAM 权限不足${NC}"
+    echo -e "     → 给你的 IAM 用户附加策略 ${GREEN}AmazonBedrockFullAccess${NC}"
+    echo -e "     → 或至少添加这 4 个权限："
+    echo -e "       ${GREEN}bedrock:InvokeModel${NC}"
+    echo -e "       ${GREEN}bedrock:InvokeModelWithResponseStream${NC}"
+    echo -e "       ${GREEN}bedrock:ListFoundationModels${NC}"
+    echo -e "       ${GREEN}bedrock:GetFoundationModel${NC}"
+    echo ""
+    echo -e "  ${CYAN}2. 模型访问未开启${NC}"
+    echo -e "     → AWS Console → Bedrock → Model access → 勾选 ${GREEN}Anthropic Claude 全系列${NC} → Save"
+    echo ""
+    echo -e "  ${CYAN}3. 区域不支持 Bedrock${NC}"
+    echo -e "     → 当前区域: ${YELLOW}${AWS_BEDROCK_REGION}${NC}"
+    echo -e "     → 推荐使用: ${GREEN}us-west-2${NC}（美西）或 ${GREEN}us-east-1${NC}（美东）"
+    echo ""
+    echo -e "  ${GREEN}${BOLD}安装会继续，但请尽快修复权限，否则 Claude Code 和 OpenClaw 无法调用 AI 模型。${NC}"
+    echo -e "  修复后可以打开新终端输入 ${CYAN}claude${NC} 验证是否正常工作。"
+    echo ""
+fi
+
+# ============================================================================
+# Step 4.5: Ensure PATH is persistent in ~/.zshrc
+# ============================================================================
+ZSHRC="$HOME/.zshrc"
+touch "$ZSHRC"
+
+add_to_zshrc() {
+    local line="$1"
+    if [[ "$line" == \#* ]]; then
+        grep -qxF "$line" "$ZSHRC" 2>/dev/null || echo "$line" >> "$ZSHRC"
+    else
+        grep -qxF "$line" "$ZSHRC" 2>/dev/null || echo "$line" >> "$ZSHRC"
+    fi
+}
+
+add_to_zshrc '# Homebrew'
+add_to_zshrc 'eval "$(/opt/homebrew/bin/brew shellenv)"'
+add_to_zshrc '# pnpm'
+add_to_zshrc 'export PNPM_HOME="$HOME/Library/pnpm"'
+add_to_zshrc 'export PATH="$PNPM_HOME:$PATH"'
+add_to_zshrc '# uv / Claude Code / local bin'
+add_to_zshrc 'export PATH="$HOME/.local/bin:$PATH"'
+
+success "PATH 配置已写入 ~/.zshrc（新终端窗口自动生效）"
+
+# ============================================================================
+# Step 5: Install OpenClaw
+# ============================================================================
+step 5 "Install OpenClaw"
 
 if check_command openclaw; then
     success "OpenClaw already installed: $(openclaw --version 2>/dev/null || echo 'installed')"
@@ -550,9 +560,9 @@ else
 fi
 
 # ============================================================================
-# Step 8: Configure OpenClaw
+# Step 6: Configure OpenClaw
 # ============================================================================
-step 8 "Configure OpenClaw"
+step 6 "Configure OpenClaw"
 
 OPENCLAW_DIR="$HOME/.openclaw"
 mkdir -p "$OPENCLAW_DIR/logs"
@@ -716,10 +726,28 @@ npx clawhub install spclaudehome/skill-vetter --dir "$OPENCLAW_DIR/skills" 2>/de
     && success "skill-vetter 已安装" \
     || warn "skill-vetter 安装失败，可稍后手动安装：npx clawhub install spclaudehome/skill-vetter"
 
+# Install OneClaw bundled skills (claude-code, aws-infra, chrome-devtools, skill-vetting)
+info "安装 OneClaw 预置 Skills..."
+SKILLS_DIR="$OPENCLAW_DIR/workspace/skills"
+mkdir -p "$SKILLS_DIR"
+ONECLAW_TMP="/tmp/oneclaw-skills-$$"
+if git clone --depth 1 https://github.com/cncoder/oneclaw.git "$ONECLAW_TMP" 2>/dev/null; then
+    for skill_name in claude-code aws-infra chrome-devtools skill-vetting; do
+        if [ -d "$ONECLAW_TMP/skills/$skill_name" ]; then
+            cp -r "$ONECLAW_TMP/skills/$skill_name" "$SKILLS_DIR/"
+            success "Skill 已安装: $skill_name"
+        fi
+    done
+    rm -rf "$ONECLAW_TMP"
+else
+    warn "Skills 自动安装失败（网络问题？），可稍后手动安装。"
+    echo -e "  打开终端输入 ${GREEN}claude${NC}，然后说：「帮我安装 OneClaw skills」"
+fi
+
 # ============================================================================
-# Step 9: Guardian watchdog script
+# Step 7: Guardian watchdog script
 # ============================================================================
-step 9 "Set up Guardian watchdog"
+step 7 "Set up Guardian watchdog"
 
 cat > "$OPENCLAW_DIR/scripts/guardian-check.sh" <<'GUARDIAN_EOF'
 #!/bin/bash
@@ -871,9 +899,9 @@ chmod +x "$OPENCLAW_DIR/scripts/guardian-check.sh"
 success "Guardian script written"
 
 # ============================================================================
-# Step 10: LaunchAgents (auto-start on boot)
+# Step 8: LaunchAgents (auto-start on boot)
 # ============================================================================
-step 10 "Set up LaunchAgents for auto-start"
+step 8 "Set up LaunchAgents for auto-start"
 
 LAUNCH_DIR="$HOME/Library/LaunchAgents"
 mkdir -p "$LAUNCH_DIR"
@@ -1074,9 +1102,9 @@ PLIST_EOF
 success "Chrome CDP LaunchAgent created (port 9222)"
 
 # ============================================================================
-# Step 11: Generate CLAUDE.md for OpenClaw init
+# Step 9: Generate CLAUDE.md for OpenClaw init
 # ============================================================================
-step 11 "Generate CLAUDE.md for OpenClaw initialization"
+step 9 "Generate CLAUDE.md for OpenClaw initialization"
 
 cat > "$OPENCLAW_DIR/workspace/CLAUDE.md" <<'CLAUDEMD_EOF'
 # OpenClaw Workspace
@@ -1109,9 +1137,9 @@ CLAUDEMD_EOF
 success "CLAUDE.md written"
 
 # ============================================================================
-# Step 12: Start services
+# Step 10: Start services
 # ============================================================================
-step 12 "Start OpenClaw services"
+step 10 "Start OpenClaw services"
 
 # Unload first in case they exist
 launchctl unload "$LAUNCH_DIR/ai.openclaw.chrome.plist" 2>/dev/null || true
@@ -1153,9 +1181,9 @@ for i in $(seq 1 15); do
 done
 
 # ============================================================================
-# Step 13: Smoke test
+# Step 11: Smoke test
 # ============================================================================
-step 13 "验证安装"
+step 11 "验证安装"
 
 SMOKE_PASS=0
 SMOKE_FAIL=0
@@ -1183,9 +1211,9 @@ if [ "$SMOKE_FAIL" -gt 0 ]; then
 fi
 
 # ============================================================================
-# Step 14: Repair script for emergencies
+# Step 12: Repair script for emergencies
 # ============================================================================
-step 14 "创建紧急修复脚本"
+step 12 "创建紧急修复脚本"
 
 cat > "$OPENCLAW_DIR/scripts/repair.sh" <<'REPAIR_EOF'
 #!/bin/bash
@@ -1253,7 +1281,7 @@ chmod +x "$HOME/Desktop/repair-openclaw.sh"
 success "Repair script created: ~/Desktop/repair-openclaw.sh (桌面快捷方式)"
 
 # ============================================================================
-# Step 14.5: AI-powered repair script (Claude Code --dangerously-skip-permissions)
+# Step 12.5: AI-powered repair script (Claude Code --dangerously-skip-permissions)
 # ============================================================================
 info "Creating AI-powered repair script..."
 
@@ -1388,9 +1416,11 @@ echo "  openclaw status                     — 查看 OpenClaw 运行状态"
 echo "  openclaw doctor                     — 诊断问题"
 echo ""
 
-echo -e "${BOLD}出问题了？${NC}"
-echo -e "  ${CYAN}bash ~/Desktop/repair-openclaw.sh${NC}      — 一键修复（停止→清理→重启）"
-echo -e "  ${CYAN}bash ~/Desktop/ai-repair-openclaw.sh${NC}   — AI 智能修复（Claude 自动排查+修复）"
+echo -e "${BOLD}出问题了？桌面有三个快捷脚本：${NC}"
+echo -e "  📁 ~/Desktop/${GREEN}repair-openclaw.sh${NC}      — 一键修复（重启所有服务）"
+echo -e "  📁 ~/Desktop/${GREEN}ai-repair-openclaw.sh${NC}   — AI 智能修复（Claude 自动排查，约 1-3 分钟）"
+echo -e "  📁 ~/Desktop/${GREEN}ask-claude.sh${NC}            — 打开 Claude 对话（用中文描述任何问题）"
+echo -e "  ${YELLOW}使用方法：右键脚本 → 打开方式 → 终端，或在终端输入 bash ~/Desktop/脚本名${NC}"
 echo ""
 
 echo -e "${BOLD}控制面板：${NC}"
@@ -1400,16 +1430,11 @@ echo -e "${BOLD}Gateway Token（登录控制台时需要，请复制保存）：
 echo -e "  ${GREEN}${BOLD}${GATEWAY_TOKEN}${NC}"
 echo ""
 
-echo -e "${BOLD}日志文件（排查问题时查看）：${NC}"
-echo "  ~/.openclaw/logs/gateway.log        — Gateway 日志"
-echo "  ~/.openclaw/logs/node.log           — Node 日志"
-echo "  ~/.openclaw/logs/guardian.log       — 守护进程日志"
-echo ""
 
 echo -e "${YELLOW}${BOLD}接下来做什么：${NC}"
-echo "  1. 打开一个新的终端窗口（很重要！PATH 需要刷新）"
-echo "  2. 输入：${CYAN}claude${NC}"
-echo "  3. Claude Code 会自动通过 Bedrock 调用 Claude 模型"
+echo -e "  1. 按 ${GREEN}Command + N${NC} 打开一个新的终端窗口（很重要！新窗口才能识别刚装的命令）"
+echo -e "  2. 在新窗口输入：${CYAN}claude${NC}  然后按回车"
+echo -e "  3. Claude Code 启动后，你可以用中文和它对话，让它帮你写代码、排查问题"
 echo ""
 
 if [ -n "$DISCORD_BOT_TOKEN" ]; then

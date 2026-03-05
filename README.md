@@ -159,12 +159,13 @@ Just run `setup.sh` again — already-installed components will be skipped.
 
 ## OpenClaw Skills (Recommended)
 
-The `skills/` directory in this repo contains three pre-built Skills that significantly enhance OpenClaw + Claude Code:
+The `skills/` directory in this repo contains four pre-built Skills that significantly enhance OpenClaw + Claude Code:
 
 | Skill | Description |
 |-------|-------------|
 | `claude-code` | Teaches OpenClaw how to effectively dispatch Claude Code: task splitting, progressive delivery, Slot Machine recovery, terminal interaction, debugging workflow |
 | `aws-infra` | AWS infrastructure queries, auditing, and monitoring via AWS CLI — read-only by default, write actions require confirmation |
+| `chrome-devtools` | Browser automation via Chrome DevTools Protocol (CDP): UI verification, web scraping, screenshot-based debugging, frontend testing |
 | `skill-vetting` | Security review tool for vetting third-party Skills from ClawHub before installation, with automated scanner and prompt injection defense |
 
 ### Installation
@@ -178,7 +179,7 @@ claude
 Then type:
 
 ```
-Install the three skills (claude-code, aws-infra, skill-vetting) from
+Install the four skills (claude-code, aws-infra, chrome-devtools, skill-vetting) from
 https://github.com/cncoder/oneclaw into OpenClaw.
 Copy each skill directory to ~/.openclaw/workspace/skills/.
 ```
@@ -189,6 +190,7 @@ Or install manually:
 git clone --depth 1 https://github.com/cncoder/oneclaw.git /tmp/oneclaw
 cp -r /tmp/oneclaw/skills/claude-code ~/.openclaw/workspace/skills/
 cp -r /tmp/oneclaw/skills/aws-infra ~/.openclaw/workspace/skills/
+cp -r /tmp/oneclaw/skills/chrome-devtools ~/.openclaw/workspace/skills/
 cp -r /tmp/oneclaw/skills/skill-vetting ~/.openclaw/workspace/skills/
 rm -rf /tmp/oneclaw
 ```
