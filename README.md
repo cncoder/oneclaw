@@ -29,6 +29,34 @@ bash setup.sh
 | Discord Bot Token | No | Connect OpenClaw to Discord chat |
 | Discord Webhook URL | No | Alert notifications on system errors |
 
+### IAM Permissions Required
+
+The AWS IAM user needs the following permissions:
+
+**Easiest**: Attach the AWS managed policy `AmazonBedrockFullAccess`
+
+**Least-privilege policy** (recommended for production):
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "bedrock:InvokeModel",
+        "bedrock:InvokeModelWithResponseStream",
+        "bedrock:ListFoundationModels",
+        "bedrock:GetFoundationModel"
+      ],
+      "Resource": "arn:aws:bedrock:*::foundation-model/*"
+    }
+  ]
+}
+```
+
+> **You also need to enable model access in the Bedrock console**: AWS Console → Bedrock → Model access → Select all Anthropic Claude models → Save changes
+
 ## What Gets Installed
 
 - **Homebrew** — macOS package manager

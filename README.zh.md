@@ -29,6 +29,34 @@ bash setup.sh
 | Discord Bot Token | ❌ 可选 | 让 OpenClaw 连接 Discord 聊天 |
 | Discord Webhook URL | ❌ 可选 | 系统异常时发通知 |
 
+### IAM 权限要求
+
+AWS IAM 用户需要以下权限才能正常使用：
+
+**最简方式**：附加 AWS 托管策略 `AmazonBedrockFullAccess`
+
+**最小权限策略**（推荐生产环境使用）：
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "bedrock:InvokeModel",
+        "bedrock:InvokeModelWithResponseStream",
+        "bedrock:ListFoundationModels",
+        "bedrock:GetFoundationModel"
+      ],
+      "Resource": "arn:aws:bedrock:*::foundation-model/*"
+    }
+  ]
+}
+```
+
+> **还需要在 Bedrock 控制台开启模型访问**：AWS Console → Bedrock → Model access → 勾选 Anthropic Claude 全系列 → Save changes
+
 ## 自动安装的组件
 
 - **Homebrew** — macOS 包管理器
