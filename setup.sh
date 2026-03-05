@@ -80,9 +80,19 @@ echo -e "${NC}"
 info "Detected: macOS $(sw_vers -productVersion) ($(uname -m))"
 
 echo ""
-echo -e "${YELLOW}${BOLD}提示：${NC}安装过程中 Homebrew 可能会要求输入你的 Mac 登录密码（sudo）。"
-echo -e "      这是正常的，密码输入时屏幕不会显示任何字符，输完按回车就行。"
+echo -e "${YELLOW}${BOLD}提示：${NC}安装过程需要管理员权限（sudo），请先输入你的 Mac 登录密码。"
+echo -e "      密码输入时屏幕不会显示任何字符，输完按回车就行。"
 echo ""
+
+# Pre-flight sudo check — acquire sudo before anything else
+if ! sudo -n true 2>/dev/null; then
+    sudo -v || error "无法获取管理员权限。请确认你的账户是管理员，并输入正确的密码。"
+fi
+# Keep sudo alive throughout the script
+(while true; do sudo -n true; sleep 50; done) 2>/dev/null &
+SUDO_KEEPALIVE_PID=$!
+trap 'kill $SUDO_KEEPALIVE_PID 2>/dev/null' EXIT
+success "管理员权限已获取"
 
 # ============================================================================
 # Step 0.5: Xcode Command Line Tools (required before Homebrew)
@@ -110,7 +120,7 @@ if check_command brew; then
     success "Homebrew already installed: $(brew --version | head -1)"
 else
     info "Installing Homebrew..."
-    NONINTERACTIVE=1 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+    /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
     # Add to PATH for this session
     eval "$(/opt/homebrew/bin/brew shellenv)"
     success "Homebrew installed"
