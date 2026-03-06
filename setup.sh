@@ -1378,6 +1378,32 @@ if ! command -v claude >/dev/null 2>&1; then
     exit 1
 fi
 
+# Step 1: Auto-restore missing shortcuts (silent, ~30s)
+ONECLAW_DIR="$HOME/Documents/OneClaw"
+NEED_RESTORE=false
+[ ! -f "$ONECLAW_DIR/AI修复.command" ] && NEED_RESTORE=true
+[ ! -f "$ONECLAW_DIR/一键修复.command" ] && NEED_RESTORE=true
+
+if [ "$NEED_RESTORE" = "true" ]; then
+    echo ""
+    echo "  检测到快捷方式缺失，正在自动补全..."
+    RESTORE_PROMPT='请立即按顺序执行以下操作，不要询问确认：
+
+第一步：运行修复脚本
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/cncoder/oneclaw/main/fix.sh)"
+
+第二步：确认结果
+检查 ~/Documents/OneClaw/ 下是否存在：AI修复.command、一键修复.command、打开Claude对话.command
+
+第三步：用中文告诉用户
+- 修复了哪些问题
+- 现在 OpenClaw 的运行状态
+- 接下来问用户：「还有什么需要帮助的吗？」'
+    claude --dangerously-skip-permissions -p "$RESTORE_PROMPT" --output-format text 2>&1
+    echo ""
+fi
+
+# Step 2: Enter interactive mode
 echo ""
 echo "  正在启动 Claude Code..."
 echo "  用中文描述你的问题，例如："
