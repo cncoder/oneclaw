@@ -1218,7 +1218,7 @@ step 12 "创建紧急修复脚本"
 cat > "$OPENCLAW_DIR/scripts/repair.sh" <<'REPAIR_EOF'
 #!/bin/bash
 # repair.sh — Emergency repair for OpenClaw
-# Double-click this file on Desktop, or run: bash ~/Desktop/repair-openclaw.sh
+# Double-click in ~/Documents/OneClaw/, or run: bash ~/Documents/OneClaw/一键修复.command
 
 set -euo pipefail
 
@@ -1268,17 +1268,18 @@ done
 
 echo -e "\n${RED}${BOLD}Gateway still not responding.${NC}"
 echo -e "Try the AI repair command (copy-paste into terminal):\n"
-echo -e "  ${CYAN}bash ~/.openclaw/scripts/ai-repair.sh${NC}\n"
+echo -e "  ${CYAN}bash ~/Documents/OneClaw/AI修复.command${NC}\n"
 echo -e "Or check logs manually:"
 echo "  tail -50 ~/.openclaw/logs/gateway.log"
 echo "  tail -50 ~/.openclaw/logs/gateway.err.log"
 REPAIR_EOF
 chmod +x "$OPENCLAW_DIR/scripts/repair.sh"
 
-# Copy repair.sh to Desktop for easy access
-cp "$OPENCLAW_DIR/scripts/repair.sh" "$HOME/Desktop/repair-openclaw.sh"
-chmod +x "$HOME/Desktop/repair-openclaw.sh"
-success "Repair script created: ~/Desktop/repair-openclaw.sh (桌面快捷方式)"
+# Copy repair.sh to ~/Documents/OneClaw/ for easy access
+mkdir -p "$HOME/Documents/OneClaw"
+cp "$OPENCLAW_DIR/scripts/repair.sh" "$HOME/Documents/OneClaw/一键修复.command"
+chmod +x "$HOME/Documents/OneClaw/一键修复.command"
+success "Repair script created: ~/Documents/OneClaw/一键修复.command"
 
 # ============================================================================
 # Step 12.5: AI-powered repair script (Claude Code --dangerously-skip-permissions)
@@ -1289,7 +1290,7 @@ cat > "$OPENCLAW_DIR/scripts/ai-repair.sh" <<'AIREPAIR_EOF'
 #!/bin/bash
 # ai-repair.sh — Let Claude Code diagnose and fix OpenClaw automatically
 # Usage: bash ~/.openclaw/scripts/ai-repair.sh
-#   or:  bash ~/Desktop/ai-repair-openclaw.sh
+#   or:  bash ~/Documents/OneClaw/AI修复.command
 
 set -euo pipefail
 
@@ -1358,16 +1359,17 @@ echo -e "If issues persist, check: ${CYAN}https://github.com/cncoder/oneclaw/iss
 AIREPAIR_EOF
 chmod +x "$OPENCLAW_DIR/scripts/ai-repair.sh"
 
-# Copy to Desktop too
-cp "$OPENCLAW_DIR/scripts/ai-repair.sh" "$HOME/Desktop/ai-repair-openclaw.sh"
-chmod +x "$HOME/Desktop/ai-repair-openclaw.sh"
-success "AI repair script created: ~/Desktop/ai-repair-openclaw.sh (桌面快捷方式)"
+# Copy to ~/Documents/OneClaw/ too
+mkdir -p "$HOME/Documents/OneClaw"
+cp "$OPENCLAW_DIR/scripts/ai-repair.sh" "$HOME/Documents/OneClaw/AI修复.command"
+chmod +x "$HOME/Documents/OneClaw/AI修复.command"
+success "AI repair script created: ~/Documents/OneClaw/AI修复.command"
 
-# ask-claude.sh — one-click open Claude Code interactive mode
-cat > "$HOME/Desktop/ask-claude.sh" <<'ASKCLAUDE_EOF'
+# 打开Claude对话.command — one-click open Claude Code interactive mode
+cat > "$HOME/Documents/OneClaw/打开Claude对话.command" <<'ASKCLAUDE_EOF'
 #!/bin/bash
-# ask-claude.sh — Open Claude Code in interactive mode
-# Just describe your problem in Chinese, Claude will help you fix it.
+# 打开Claude对话.command — Open Claude Code in interactive mode
+# Double-click this file to start chatting with Claude in Chinese.
 
 export PATH="$HOME/.local/bin:$HOME/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
 
@@ -1377,8 +1379,8 @@ if ! command -v claude >/dev/null 2>&1; then
 fi
 
 echo ""
-echo "  Starting Claude Code..."
-echo "  Describe your problem in Chinese, for example:"
+echo "  正在启动 Claude Code..."
+echo "  用中文描述你的问题，例如："
 echo "    「OpenClaw 报 AWS 签名错误，帮我修一下」"
 echo "    「Chrome 连不上」"
 echo "    「帮我看看日志哪里出错了」"
@@ -1387,8 +1389,8 @@ echo ""
 cd ~/.openclaw/workspace 2>/dev/null || cd ~
 claude
 ASKCLAUDE_EOF
-chmod +x "$HOME/Desktop/ask-claude.sh"
-success "Ask Claude script created: ~/Desktop/ask-claude.sh (桌面快捷方式)"
+chmod +x "$HOME/Documents/OneClaw/打开Claude对话.command"
+success "Ask Claude script created: ~/Documents/OneClaw/打开Claude对话.command"
 
 # ============================================================================
 # Done!
@@ -1416,11 +1418,11 @@ echo "  openclaw status                     — 查看 OpenClaw 运行状态"
 echo "  openclaw doctor                     — 诊断问题"
 echo ""
 
-echo -e "${BOLD}出问题了？桌面有三个快捷脚本：${NC}"
-echo -e "  📁 ~/Desktop/${GREEN}repair-openclaw.sh${NC}      — 一键修复（重启所有服务）"
-echo -e "  📁 ~/Desktop/${GREEN}ai-repair-openclaw.sh${NC}   — AI 智能修复（Claude 自动排查，约 1-3 分钟）"
-echo -e "  📁 ~/Desktop/${GREEN}ask-claude.sh${NC}            — 打开 Claude 对话（用中文描述任何问题）"
-echo -e "  ${YELLOW}使用方法：右键脚本 → 打开方式 → 终端，或在终端输入 bash ~/Desktop/脚本名${NC}"
+echo -e "${BOLD}出问题了？打开访达 → 文稿 → OneClaw 文件夹，双击运行：${NC}"
+echo -e "  📁 ~/Documents/OneClaw/${GREEN}一键修复.command${NC}      — 重启所有服务"
+echo -e "  📁 ~/Documents/OneClaw/${GREEN}AI修复.command${NC}         — AI 自动诊断+修复（约 1-3 分钟）"
+echo -e "  📁 ~/Documents/OneClaw/${GREEN}打开Claude对话.command${NC} — 用中文和 Claude 对话"
+echo -e "  ${YELLOW}双击即可运行，无需其他操作${NC}"
 echo ""
 
 echo -e "${BOLD}控制面板：${NC}"
@@ -1456,8 +1458,8 @@ echo -e "  ${CYAN}「OpenClaw 报 AWS 签名错误，帮我修一下」${NC}"
 echo -e "  ${CYAN}「Chrome 连不上 OpenClaw」${NC}"
 echo -e "  ${CYAN}「帮我检查 AWS 凭证是否正确」${NC}"
 echo ""
-echo -e "  或者双击桌面脚本让 AI 全自动修复："
-echo -e "  ${GREEN}bash ~/Desktop/ai-repair-openclaw.sh${NC}   — AI 自动诊断+修复（约 1-3 分钟）"
-echo -e "  ${GREEN}bash ~/Desktop/repair-openclaw.sh${NC}      — 一键重启所有服务"
+echo -e "  或者打开访达 → 文稿 → OneClaw，双击脚本让 AI 全自动修复："
+echo -e "  ${GREEN}~/Documents/OneClaw/AI修复.command${NC}      — AI 自动诊断+修复（约 1-3 分钟）"
+echo -e "  ${GREEN}~/Documents/OneClaw/一键修复.command${NC}    — 一键重启所有服务"
 echo ""
 echo -e "${GREEN}${BOLD}享受你的 AI 编程环境吧！${NC}"

@@ -129,23 +129,19 @@ bash -c "$(curl -fsSL https://raw.githubusercontent.com/cncoder/oneclaw/main/set
 
 ## Troubleshooting
 
-### Option 1: One-Click Repair (Desktop Shortcut)
+### Option 1: One-Click Repair
 
-Two repair scripts are placed on your Desktop after installation:
+Open **Finder → Documents → OneClaw** and double-click:
 
-```bash
-bash ~/Desktop/repair-openclaw.sh       # Stop → clean → restart (fixes 99% of issues)
-```
+- **`一键修复.command`** — Stop → clean → restart all services (fixes 99% of issues)
 
 ### Option 2: AI-Powered Repair (Recommended)
 
-Let Claude Code automatically read logs, diagnose issues, and fix them:
+Open **Finder → Documents → OneClaw** and double-click:
 
-```bash
-bash ~/Desktop/ai-repair-openclaw.sh    # Claude auto-diagnoses + fixes (~1-3 min)
-```
+- **`AI修复.command`** — Claude auto-diagnoses + fixes (~1-3 min)
 
-This launches Claude Code which will automatically:
+Claude Code will automatically:
 - Run `openclaw status` and `openclaw doctor`
 - Read gateway/node/chrome error logs
 - Check LaunchAgent and port status
@@ -153,7 +149,21 @@ This launches Claude Code which will automatically:
 - **Auto-fix any issues found**
 - Restart all services and verify
 
-### Option 3: Check Logs
+### Option 3: Chat with Claude
+
+Open **Finder → Documents → OneClaw** and double-click:
+
+- **`打开Claude对话.command`** — Describe your problem in Chinese, Claude will help
+
+### Option 4: Upgrade (existing users)
+
+If you installed an older version, run this once to get the latest shortcuts:
+
+```bash
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/cncoder/oneclaw/main/fix.sh)"
+```
+
+### Option 5: Check Logs
 
 ```bash
 tail -50 ~/.openclaw/logs/gateway.log      # Gateway log
@@ -161,7 +171,7 @@ tail -50 ~/.openclaw/logs/gateway.err.log  # Gateway error log
 tail -50 ~/.openclaw/logs/guardian.log     # Guardian daemon log
 ```
 
-### Option 4: Reinstall
+### Option 6: Reinstall
 
 Just run `setup.sh` again — already-installed components will be skipped.
 
@@ -216,8 +226,8 @@ rm -f ~/Library/LaunchAgents/ai.openclaw.*.plist
 openclaw uninstall 2>/dev/null   # if supported by your version
 rm -rf ~/.openclaw
 
-# 3. Remove desktop shortcuts
-rm -f ~/Desktop/repair-openclaw.sh ~/Desktop/ai-repair-openclaw.sh
+# 3. Remove OneClaw shortcuts
+rm -rf ~/Documents/OneClaw
 
 # 4. (Optional) Remove Claude Code
 npm uninstall -g @anthropic-ai/claude-code 2>/dev/null
@@ -238,9 +248,10 @@ npm uninstall -g @anthropic-ai/claude-code 2>/dev/null
 ## File Layout
 
 ```
-~/Desktop/
-├── repair-openclaw.sh          One-click repair (desktop shortcut)
-└── ai-repair-openclaw.sh       AI-powered repair (desktop shortcut)
+~/Documents/OneClaw/
+├── 一键修复.command             One-click repair (double-click to run)
+├── AI修复.command               AI-powered repair (double-click to run)
+└── 打开Claude对话.command       Open Claude Code chat (double-click to run)
 ~/.aws/                         AWS credentials
 ~/.claude/settings.json         Claude Code config
 ~/.mcp.json                     MCP server config
