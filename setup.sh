@@ -36,6 +36,39 @@ warn()    { echo -e "${YELLOW}[WARN]${NC} $1"; }
 error()   { echo -e "${RED}[ERROR]${NC} $1"; exit 1; }
 step()    { echo -e "\n${CYAN}${BOLD}=== Step $1: $2 ===${NC}\n"; }
 
+# --- launchctl modern API helpers (bootstrap/bootout for macOS 13+, fallback to load/unload) ---
+_launchctl_has_bootstrap() {
+    # macOS 13+ (Ventura) supports bootstrap/bootout
+    local major
+    major=$(sw_vers -productVersion 2>/dev/null | cut -d. -f1)
+    [ "${major:-0}" -ge 13 ]
+}
+
+GUI_UID=$(id -u)
+
+la_load() {
+    local plist="$1"
+    local label
+    label=$(basename "$plist" .plist)
+    if _launchctl_has_bootstrap; then
+        launchctl bootstrap "gui/${GUI_UID}" "$plist" 2>/dev/null || \
+            launchctl kickstart -k "gui/${GUI_UID}/${label}" 2>/dev/null || true
+    else
+        launchctl load "$plist" 2>/dev/null || true
+    fi
+}
+
+la_unload() {
+    local plist="$1"
+    local label
+    label=$(basename "$plist" .plist)
+    if _launchctl_has_bootstrap; then
+        launchctl bootout "gui/${GUI_UID}/${label}" 2>/dev/null || true
+    else
+        launchctl unload "$plist" 2>/dev/null || true
+    fi
+}
+
 ask_secret() {
     local prompt="$1" var_name="$2" hide="${3:-false}"
     local value=""
@@ -216,26 +249,35 @@ info "已自动生成 Gateway 安全令牌"
 info "Writing AWS credentials..."
 mkdir -p "$HOME/.aws"
 
-if [ ! -f "$HOME/.aws/credentials" ] || ! grep -q "aws_access_key_id" "$HOME/.aws/credentials" 2>/dev/null; then
-    cat > "$HOME/.aws/credentials" <<EOF
+if command -v aws >/dev/null 2>&1; then
+    aws configure set aws_access_key_id "$AWS_AK" --profile default
+    aws configure set aws_secret_access_key "$AWS_SK" --profile default
+    aws configure set region "$AWS_BEDROCK_REGION" --profile default
+    aws configure set output json --profile default
+    success "AWS credentials set via 'aws configure set' (default profile only, other profiles untouched)"
+else
+    # aws cli not yet installed — write files directly (only [default] section)
+    if [ ! -f "$HOME/.aws/credentials" ] || ! grep -q "\[default\]" "$HOME/.aws/credentials" 2>/dev/null; then
+        cat > "$HOME/.aws/credentials" <<EOF
 [default]
 aws_access_key_id = ${AWS_AK}
 aws_secret_access_key = ${AWS_SK}
 EOF
-    success "AWS credentials written to ~/.aws/credentials"
-else
-    warn "~/.aws/credentials already exists, not overwriting"
-fi
+        success "AWS credentials written to ~/.aws/credentials"
+    else
+        warn "~/.aws/credentials [default] already exists, not overwriting (aws cli not available for safe merge)"
+    fi
 
-if [ ! -f "$HOME/.aws/config" ] || ! grep -q "region" "$HOME/.aws/config" 2>/dev/null; then
-    cat > "$HOME/.aws/config" <<EOF
+    if [ ! -f "$HOME/.aws/config" ] || ! grep -q "\[default\]" "$HOME/.aws/config" 2>/dev/null; then
+        cat > "$HOME/.aws/config" <<EOF
 [default]
 region = ${AWS_BEDROCK_REGION}
 output = json
 EOF
-    success "AWS config written to ~/.aws/config"
-else
-    warn "~/.aws/config already exists, not overwriting"
+        success "AWS config written to ~/.aws/config"
+    else
+        warn "~/.aws/config [default] already exists, not overwriting (aws cli not available for safe merge)"
+    fi
 fi
 
 # --- Configure Claude Code for Bedrock ---
@@ -788,7 +830,7 @@ EOF
 
 get_field() {
     local json="$1" field="$2"
-    echo "$json" | grep -o "\"${field}\":[0-9]*" | grep -o '[0-9]*'
+    python3 -c "import json,sys; print(json.loads(sys.stdin.read()).get('$field',0))" <<< "$json"
 }
 
 check_process() {
@@ -1130,31 +1172,31 @@ success "CLAUDE.md written"
 step 10 "Start OpenClaw services"
 
 # Unload first in case they exist
-launchctl unload "$LAUNCH_DIR/ai.openclaw.chrome.plist" 2>/dev/null || true
-launchctl unload "$LAUNCH_DIR/ai.openclaw.gateway.plist" 2>/dev/null || true
-launchctl unload "$LAUNCH_DIR/ai.openclaw.node.plist" 2>/dev/null || true
-launchctl unload "$LAUNCH_DIR/ai.openclaw.guardian.plist" 2>/dev/null || true
+la_unload "$LAUNCH_DIR/ai.openclaw.chrome.plist"
+la_unload "$LAUNCH_DIR/ai.openclaw.gateway.plist"
+la_unload "$LAUNCH_DIR/ai.openclaw.node.plist"
+la_unload "$LAUNCH_DIR/ai.openclaw.guardian.plist"
 
 sleep 1
 
 # Start Chrome CDP first (MCP servers depend on it)
-launchctl load "$LAUNCH_DIR/ai.openclaw.chrome.plist"
+la_load "$LAUNCH_DIR/ai.openclaw.chrome.plist"
 info "Chrome CDP LaunchAgent loaded (port 9222)"
 
 sleep 2
 
 # Load and start OpenClaw services
-launchctl load "$LAUNCH_DIR/ai.openclaw.gateway.plist"
+la_load "$LAUNCH_DIR/ai.openclaw.gateway.plist"
 info "Gateway LaunchAgent loaded"
 
 sleep 3
 
-launchctl load "$LAUNCH_DIR/ai.openclaw.node.plist"
+la_load "$LAUNCH_DIR/ai.openclaw.node.plist"
 info "Node LaunchAgent loaded"
 
 sleep 2
 
-launchctl load "$LAUNCH_DIR/ai.openclaw.guardian.plist"
+la_load "$LAUNCH_DIR/ai.openclaw.guardian.plist"
 info "Guardian LaunchAgent loaded"
 
 # Wait for gateway to come up
@@ -1206,7 +1248,7 @@ step 12 "创建紧急修复脚本"
 cat > "$OPENCLAW_DIR/scripts/repair.sh" <<'REPAIR_EOF'
 #!/bin/bash
 # repair.sh — Emergency repair for OpenClaw
-# Double-click in ~/Documents/OneClaw/, or run: bash ~/Documents/OneClaw/一键修复.command
+# Double-click in ~/Documents/OneClaw/, or run: bash ~/Documents/OneClaw/repair.command
 
 set -euo pipefail
 
@@ -1219,11 +1261,32 @@ NC='\033[0m'
 
 echo -e "\n${CYAN}${BOLD}=== OpenClaw Emergency Repair ===${NC}\n"
 
+_GUI_UID=$(id -u)
+_la_load() {
+    local plist="$1" label
+    label=$(basename "$plist" .plist)
+    if [ "$(sw_vers -productVersion 2>/dev/null | cut -d. -f1)" -ge 13 ] 2>/dev/null; then
+        launchctl bootstrap "gui/${_GUI_UID}" "$plist" 2>/dev/null || \
+            launchctl kickstart -k "gui/${_GUI_UID}/${label}" 2>/dev/null || true
+    else
+        launchctl load "$plist" 2>/dev/null || true
+    fi
+}
+_la_unload() {
+    local plist="$1" label
+    label=$(basename "$plist" .plist)
+    if [ "$(sw_vers -productVersion 2>/dev/null | cut -d. -f1)" -ge 13 ] 2>/dev/null; then
+        launchctl bootout "gui/${_GUI_UID}/${label}" 2>/dev/null || true
+    else
+        launchctl unload "$plist" 2>/dev/null || true
+    fi
+}
+
 echo -e "${YELLOW}[1/5] Stopping all services...${NC}"
-launchctl unload ~/Library/LaunchAgents/ai.openclaw.chrome.plist 2>/dev/null || true
-launchctl unload ~/Library/LaunchAgents/ai.openclaw.gateway.plist 2>/dev/null || true
-launchctl unload ~/Library/LaunchAgents/ai.openclaw.node.plist 2>/dev/null || true
-launchctl unload ~/Library/LaunchAgents/ai.openclaw.guardian.plist 2>/dev/null || true
+_la_unload ~/Library/LaunchAgents/ai.openclaw.chrome.plist
+_la_unload ~/Library/LaunchAgents/ai.openclaw.gateway.plist
+_la_unload ~/Library/LaunchAgents/ai.openclaw.node.plist
+_la_unload ~/Library/LaunchAgents/ai.openclaw.guardian.plist
 pkill -f "openclaw gateway" 2>/dev/null || true
 pkill -f "openclaw node" 2>/dev/null || true
 sleep 2
@@ -1236,13 +1299,13 @@ openclaw doctor --fix --non-interactive 2>&1 || true
 sleep 2
 
 echo -e "${YELLOW}[4/5] Restarting services...${NC}"
-launchctl load ~/Library/LaunchAgents/ai.openclaw.chrome.plist
+_la_load ~/Library/LaunchAgents/ai.openclaw.chrome.plist
 sleep 2
-launchctl load ~/Library/LaunchAgents/ai.openclaw.gateway.plist
+_la_load ~/Library/LaunchAgents/ai.openclaw.gateway.plist
 sleep 3
-launchctl load ~/Library/LaunchAgents/ai.openclaw.node.plist
+_la_load ~/Library/LaunchAgents/ai.openclaw.node.plist
 sleep 2
-launchctl load ~/Library/LaunchAgents/ai.openclaw.guardian.plist
+_la_load ~/Library/LaunchAgents/ai.openclaw.guardian.plist
 
 echo -e "${YELLOW}[5/5] Waiting for gateway...${NC}"
 for i in $(seq 1 15); do
@@ -1256,7 +1319,7 @@ done
 
 echo -e "\n${RED}${BOLD}Gateway still not responding.${NC}"
 echo -e "Try the AI repair command (copy-paste into terminal):\n"
-echo -e "  ${CYAN}bash ~/Documents/OneClaw/AI修复.command${NC}\n"
+echo -e "  ${CYAN}bash ~/Documents/OneClaw/ai-repair.command${NC}\n"
 echo -e "Or check logs manually:"
 echo "  tail -50 ~/.openclaw/logs/gateway.log"
 echo "  tail -50 ~/.openclaw/logs/gateway.err.log"
@@ -1265,9 +1328,9 @@ chmod +x "$OPENCLAW_DIR/scripts/repair.sh"
 
 # Copy repair.sh to ~/Documents/OneClaw/ for easy access
 mkdir -p "$HOME/Documents/OneClaw"
-cp "$OPENCLAW_DIR/scripts/repair.sh" "$HOME/Documents/OneClaw/一键修复.command"
-chmod +x "$HOME/Documents/OneClaw/一键修复.command"
-success "Repair script created: ~/Documents/OneClaw/一键修复.command"
+cp "$OPENCLAW_DIR/scripts/repair.sh" "$HOME/Documents/OneClaw/repair.command"
+chmod +x "$HOME/Documents/OneClaw/repair.command"
+success "Repair script created: ~/Documents/OneClaw/repair.command"
 
 # ============================================================================
 # Step 12.5: AI-powered repair script (Claude Code --dangerously-skip-permissions)
@@ -1278,7 +1341,7 @@ cat > "$OPENCLAW_DIR/scripts/ai-repair.sh" <<'AIREPAIR_EOF'
 #!/bin/bash
 # ai-repair.sh — Let Claude Code diagnose and fix OpenClaw automatically
 # Usage: bash ~/.openclaw/scripts/ai-repair.sh
-#   or:  bash ~/Documents/OneClaw/AI修复.command
+#   or:  bash ~/Documents/OneClaw/ai-repair.command
 
 set -euo pipefail
 
@@ -1328,12 +1391,12 @@ REPAIR_PROMPT='You are an OpenClaw repair agent. Diagnose and fix the issue step
 
 ## Repair Actions
 After diagnosis, fix the root cause. Then restart services in order:
-1. `launchctl unload ~/Library/LaunchAgents/ai.openclaw.*.plist` (ignore errors)
+1. Stop services (macOS 13+: `launchctl bootout gui/$(id -u)/ai.openclaw.chrome` etc., older: `launchctl unload ~/Library/LaunchAgents/ai.openclaw.*.plist`)
 2. Kill orphans: `pkill -f "openclaw gateway"; pkill -f "openclaw node"`
-3. `launchctl load ~/Library/LaunchAgents/ai.openclaw.chrome.plist` → wait 2s
-4. `launchctl load ~/Library/LaunchAgents/ai.openclaw.gateway.plist` → wait 3s
-5. `launchctl load ~/Library/LaunchAgents/ai.openclaw.node.plist` → wait 2s
-6. `launchctl load ~/Library/LaunchAgents/ai.openclaw.guardian.plist`
+3. Start Chrome: `launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/ai.openclaw.chrome.plist` → wait 2s
+4. Start Gateway: `launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/ai.openclaw.gateway.plist` → wait 3s
+5. Start Node: `launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/ai.openclaw.node.plist` → wait 2s
+6. Start Guardian: `launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/ai.openclaw.guardian.plist`
 7. Verify: `curl -s http://127.0.0.1:18789/` should return 200
 
 ## Output
@@ -1349,14 +1412,14 @@ chmod +x "$OPENCLAW_DIR/scripts/ai-repair.sh"
 
 # Copy to ~/Documents/OneClaw/ too
 mkdir -p "$HOME/Documents/OneClaw"
-cp "$OPENCLAW_DIR/scripts/ai-repair.sh" "$HOME/Documents/OneClaw/AI修复.command"
-chmod +x "$HOME/Documents/OneClaw/AI修复.command"
-success "AI repair script created: ~/Documents/OneClaw/AI修复.command"
+cp "$OPENCLAW_DIR/scripts/ai-repair.sh" "$HOME/Documents/OneClaw/ai-repair.command"
+chmod +x "$HOME/Documents/OneClaw/ai-repair.command"
+success "AI repair script created: ~/Documents/OneClaw/ai-repair.command"
 
-# 打开Claude对话.command — one-click open Claude Code interactive mode
-cat > "$HOME/Documents/OneClaw/打开Claude对话.command" <<'ASKCLAUDE_EOF'
+# open-claude.command — one-click open Claude Code interactive mode
+cat > "$HOME/Documents/OneClaw/open-claude.command" <<'ASKCLAUDE_EOF'
 #!/bin/bash
-# 打开Claude对话.command — Open Claude Code in interactive mode
+# open-claude.command — Open Claude Code in interactive mode
 # Double-click this file to start chatting with Claude in Chinese.
 
 export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$HOME/Library/pnpm:/usr/local/bin:$PATH"
@@ -1370,8 +1433,8 @@ fi
 # Step 1: Auto-restore missing shortcuts (silent, ~30s)
 ONECLAW_DIR="$HOME/Documents/OneClaw"
 NEED_RESTORE=false
-[ ! -f "$ONECLAW_DIR/AI修复.command" ] && NEED_RESTORE=true
-[ ! -f "$ONECLAW_DIR/一键修复.command" ] && NEED_RESTORE=true
+[ ! -f "$ONECLAW_DIR/ai-repair.command" ] && NEED_RESTORE=true
+[ ! -f "$ONECLAW_DIR/repair.command" ] && NEED_RESTORE=true
 
 if [ "$NEED_RESTORE" = "true" ]; then
     echo ""
@@ -1382,7 +1445,7 @@ if [ "$NEED_RESTORE" = "true" ]; then
 bash -c "$(curl -fsSL https://raw.githubusercontent.com/cncoder/oneclaw/main/fix.sh)"
 
 第二步：确认结果
-检查 ~/Documents/OneClaw/ 下是否存在：AI修复.command、一键修复.command、打开Claude对话.command
+检查 ~/Documents/OneClaw/ 下是否存在：ai-repair.command、repair.command、open-claude.command
 
 第三步：用中文告诉用户
 - 修复了哪些问题
@@ -1404,8 +1467,14 @@ echo ""
 cd ~/.openclaw/workspace 2>/dev/null || cd ~
 claude
 ASKCLAUDE_EOF
-chmod +x "$HOME/Documents/OneClaw/打开Claude对话.command"
-success "Ask Claude script created: ~/Documents/OneClaw/打开Claude对话.command"
+chmod +x "$HOME/Documents/OneClaw/open-claude.command"
+success "Ask Claude script created: ~/Documents/OneClaw/open-claude.command"
+
+# Create Chinese symlinks pointing to English-named .command files
+ln -sf "repair.command" "$HOME/Documents/OneClaw/一键修复.command"
+ln -sf "ai-repair.command" "$HOME/Documents/OneClaw/AI修复.command"
+ln -sf "open-claude.command" "$HOME/Documents/OneClaw/打开Claude对话.command"
+success "Chinese symlinks created (一键修复/AI修复/打开Claude对话 → English files)"
 
 # ============================================================================
 # Done!
@@ -1434,9 +1503,9 @@ echo "  openclaw doctor                     — 诊断问题"
 echo ""
 
 echo -e "${BOLD}出问题了？打开访达 → 文稿 → OneClaw 文件夹，双击运行：${NC}"
-echo -e "  📁 ~/Documents/OneClaw/${GREEN}一键修复.command${NC}      — 重启所有服务"
-echo -e "  📁 ~/Documents/OneClaw/${GREEN}AI修复.command${NC}         — AI 自动诊断+修复（约 1-3 分钟）"
-echo -e "  📁 ~/Documents/OneClaw/${GREEN}打开Claude对话.command${NC} — 用中文和 Claude 对话"
+echo -e "  📁 ~/Documents/OneClaw/${GREEN}repair.command${NC}       — 重启所有服务（中文别名：一键修复）"
+echo -e "  📁 ~/Documents/OneClaw/${GREEN}ai-repair.command${NC}    — AI 自动诊断+修复（中文别名：AI修复）"
+echo -e "  📁 ~/Documents/OneClaw/${GREEN}open-claude.command${NC}  — 用中文和 Claude 对话（中文别名：打开Claude对话）"
 echo -e "  ${YELLOW}双击即可运行，无需其他操作${NC}"
 echo ""
 
@@ -1474,7 +1543,7 @@ echo -e "  ${CYAN}「Chrome 连不上 OpenClaw」${NC}"
 echo -e "  ${CYAN}「帮我检查 AWS 凭证是否正确」${NC}"
 echo ""
 echo -e "  或者打开访达 → 文稿 → OneClaw，双击脚本让 AI 全自动修复："
-echo -e "  ${GREEN}~/Documents/OneClaw/AI修复.command${NC}      — AI 自动诊断+修复（约 1-3 分钟）"
-echo -e "  ${GREEN}~/Documents/OneClaw/一键修复.command${NC}    — 一键重启所有服务"
+echo -e "  ${GREEN}~/Documents/OneClaw/ai-repair.command${NC}    — AI 自动诊断+修复（约 1-3 分钟）"
+echo -e "  ${GREEN}~/Documents/OneClaw/repair.command${NC}      — 一键重启所有服务"
 echo ""
 echo -e "${GREEN}${BOLD}享受你的 AI 编程环境吧！${NC}"
