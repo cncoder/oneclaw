@@ -26,7 +26,7 @@ bash setup.sh
 - **macOS 13 (Ventura)** or later
 - **Apple Silicon** (M1 / M2 / M3 / M4) — Intel Macs are not supported
 - **16 GB RAM** recommended (8 GB minimum)
-- **~5 GB free disk space** (Homebrew, Node.js, Chrome, OpenClaw, etc.)
+- **~5 GB free disk space** (Node.js, Chrome, OpenClaw, etc.)
 - Internet connection during installation
 
 ## Prerequisites
@@ -67,8 +67,8 @@ The AWS IAM user needs the following permissions:
 
 ## What Gets Installed
 
-- **Homebrew** — macOS package manager
-- **Node.js** — JavaScript runtime
+- **fnm** — Fast Node Manager (manages Node.js versions)
+- **Node.js** — JavaScript runtime (installed via fnm)
 - **pnpm** — Fast package manager
 - **uv / uvx** — Python package manager (for MCP servers)
 - **AWS CLI** — AWS command-line tools
@@ -99,20 +99,21 @@ If the script fails at a specific step, you can install the prerequisites manual
 # 1. Xcode Command Line Tools
 xcode-select --install
 
-# 2. Homebrew
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-echo 'eval "$(/opt/homebrew/bin/brew shellenv)"' >> ~/.zshrc
-eval "$(/opt/homebrew/bin/brew shellenv)"
+# 2. fnm + Node.js
+curl -fsSL https://fnm.vercel.app/install | bash
+source ~/.zshrc
+fnm install --lts
 
-# 3. Node.js + pnpm
-brew install node
-npm install -g pnpm
+# 3. pnpm
+corepack enable && corepack prepare pnpm@latest --activate
+# or: npm install -g pnpm
 
 # 4. uv (Python package manager)
 curl -LsSf https://astral.sh/uv/install.sh | sh
 
-# 5. AWS CLI
-brew install awscli
+# 5. AWS CLI (official installer)
+curl -fsSL "https://awscli.amazonaws.com/AWSCLIV2.pkg" -o /tmp/AWSCLIV2.pkg
+sudo installer -pkg /tmp/AWSCLIV2.pkg -target /
 
 # 6. Claude Code
 curl -fsSL https://claude.ai/install.sh | bash
@@ -236,7 +237,7 @@ npm uninstall -g @anthropic-ai/claude-code 2>/dev/null
 # Review and edit ~/.mcp.json — remove the entries added by OneClaw
 ```
 
-> Homebrew, Node.js, AWS CLI, and uv are shared tools — only remove them if no other project depends on them.
+> fnm, Node.js, AWS CLI, and uv are shared tools — only remove them if no other project depends on them.
 
 ## Security
 

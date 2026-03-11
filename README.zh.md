@@ -26,7 +26,7 @@ bash setup.sh
 - **macOS 13 (Ventura)** 或更高版本
 - **Apple Silicon**（M1 / M2 / M3 / M4）— 不支持 Intel Mac
 - **16 GB 内存**（推荐，最低 8 GB）
-- **约 5 GB 可用磁盘空间**（Homebrew、Node.js、Chrome、OpenClaw 等）
+- **约 5 GB 可用磁盘空间**（Node.js、Chrome、OpenClaw 等）
 - 安装过程需要联网
 
 ## 你需要准备什么
@@ -67,8 +67,8 @@ AWS IAM 用户需要以下权限才能正常使用：
 
 ## 自动安装的组件
 
-- **Homebrew** — macOS 包管理器
-- **Node.js** — JavaScript 运行时
+- **fnm** — Fast Node Manager（管理 Node.js 版本）
+- **Node.js** — JavaScript 运行时（通过 fnm 安装）
 - **pnpm** — 快速包管理器
 - **uv / uvx** — Python 包管理（MCP 服务器需要）
 - **AWS CLI** — AWS 命令行工具
@@ -99,20 +99,21 @@ openclaw doctor                     # 诊断问题
 # 1. Xcode Command Line Tools
 xcode-select --install
 
-# 2. Homebrew
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-echo 'eval "$(/opt/homebrew/bin/brew shellenv)"' >> ~/.zshrc
-eval "$(/opt/homebrew/bin/brew shellenv)"
+# 2. fnm + Node.js
+curl -fsSL https://fnm.vercel.app/install | bash
+source ~/.zshrc
+fnm install --lts
 
-# 3. Node.js + pnpm
-brew install node
-npm install -g pnpm
+# 3. pnpm
+corepack enable && corepack prepare pnpm@latest --activate
+# 或者: npm install -g pnpm
 
 # 4. uv（Python 包管理器）
 curl -LsSf https://astral.sh/uv/install.sh | sh
 
-# 5. AWS CLI
-brew install awscli
+# 5. AWS CLI（官方安装包）
+curl -fsSL "https://awscli.amazonaws.com/AWSCLIV2.pkg" -o /tmp/AWSCLIV2.pkg
+sudo installer -pkg /tmp/AWSCLIV2.pkg -target /
 
 # 6. Claude Code
 curl -fsSL https://claude.ai/install.sh | bash
@@ -232,7 +233,7 @@ npm uninstall -g @anthropic-ai/claude-code 2>/dev/null
 # 检查并编辑 ~/.mcp.json — 删除 OneClaw 添加的条目
 ```
 
-> Homebrew、Node.js、AWS CLI、uv 是通用工具 — 只有确认没有其他项目依赖时才卸载。
+> fnm、Node.js、AWS CLI、uv 是通用工具 — 只有确认没有其他项目依赖时才卸载。
 
 ## 安全说明
 

@@ -8,8 +8,8 @@
 # What it does:
 #   1. Install Claude Code (no dependencies — your AI assistant for troubleshooting)
 #   2. Collect AWS credentials + configure Claude Code for Bedrock
-#   3. Install Homebrew (if fails, user can run `claude` to fix)
-#   4. Install Node.js, pnpm, uv/uvx, AWS CLI
+#   3. Install fnm (Fast Node Manager) + Node.js
+#   4. Install pnpm, uv/uvx, AWS CLI
 #   5. Install OpenClaw
 #   6. Configure OpenClaw (Bedrock, browser, agents)
 #   7. Set up Guardian watchdog + LaunchAgents (auto-start on boot)
@@ -94,7 +94,7 @@ trap 'kill $SUDO_KEEPALIVE_PID 2>/dev/null' EXIT
 success "管理员权限已获取"
 
 # ============================================================================
-# Step 0.5: Xcode Command Line Tools (required before Homebrew)
+# Step 0.5: Xcode Command Line Tools (required for compilation tools)
 # ============================================================================
 if ! xcode-select -p >/dev/null 2>&1; then
     info "Installing Xcode Command Line Tools (may take a few minutes)..."
@@ -125,7 +125,7 @@ fi
 # ============================================================================
 step 1 "Install Claude Code"
 
-echo -e "${BOLD}Claude Code 是 AI 编程助手，不依赖 Homebrew，优先安装。${NC}"
+echo -e "${BOLD}Claude Code 是 AI 编程助手，无额外依赖，优先安装。${NC}"
 echo -e "后续步骤如果遇到问题，你可以随时打开新终端输入 ${GREEN}claude${NC} 让它帮你修复。\n"
 
 if check_command claude; then
@@ -348,73 +348,59 @@ echo -e "如果后续步骤遇到问题，打开新终端窗口输入 ${CYAN}cla
 echo ""
 
 # ============================================================================
-# Step 3: Homebrew (if fails, user has Claude Code as safety net)
+# Step 3: fnm (Fast Node Manager) + Node.js
 # ============================================================================
-step 3 "Install Homebrew"
+step 3 "Install fnm + Node.js"
 
-HOMEBREW_FAILED=false
-if check_command brew; then
-    success "Homebrew already installed: $(brew --version | head -1)"
+# fnm (Fast Node Manager)
+if check_command fnm; then
+    success "fnm already installed: $(fnm --version)"
 else
-    info "Installing Homebrew..."
-    if /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"; then
-        eval "$(/opt/homebrew/bin/brew shellenv)"
-        success "Homebrew installed"
+    info "Installing fnm (Fast Node Manager)..."
+    if curl -fsSL https://fnm.vercel.app/install | bash; then
+        export PATH="$HOME/.local/share/fnm:$PATH"
+        eval "$(fnm env 2>/dev/null)" || true
+        success "fnm installed"
     else
-        HOMEBREW_FAILED=true
-        echo ""
-        echo -e "${RED}${BOLD}Homebrew 自动安装失败。${NC}"
-        echo -e "${GREEN}${BOLD}好消息：Claude Code 已经装好了！${NC}你可以让它帮你修。"
-        echo ""
-        echo -e "  ${CYAN}方法 1（推荐）：打开新终端窗口，输入：${NC}"
-        echo -e "     ${GREEN}claude${NC}"
-        echo -e "  然后告诉它："帮我安装 Homebrew，安装完后继续运行 setup.sh""
-        echo ""
-        echo -e "  ${CYAN}方法 2（手动）：${NC}"
-        echo -e "     /bin/bash -c \"\$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\""
-        echo -e "     echo 'eval \"\$(/opt/homebrew/bin/brew shellenv)\"' >> ~/.zshrc"
-        echo -e "     eval \"\$(/opt/homebrew/bin/brew shellenv)\""
-        echo ""
-        echo -e "  ${CYAN}修好后重新运行本脚本：${NC}"
-        echo -e "     ${GREEN}bash setup.sh${NC}"
-        echo ""
+        echo -e "${RED}fnm 安装失败。${NC}你可以打开新终端输入 ${GREEN}claude${NC} 让它帮你修，或手动运行: ${CYAN}curl -fsSL https://fnm.vercel.app/install | bash${NC}"
         exit 1
     fi
 fi
 
-# Ensure brew is in PATH
-if ! check_command brew; then
-    eval "$(/opt/homebrew/bin/brew shellenv)"
+# Ensure fnm is in PATH
+eval "$(fnm env 2>/dev/null)" || true
+
+# Node.js via fnm
+if check_command node; then
+    success "Node.js already installed: $(node --version)"
+else
+    info "Installing Node.js LTS via fnm..."
+    if fnm install --lts && fnm use lts-latest && fnm default lts-latest; then
+        eval "$(fnm env)"
+        success "Node.js installed: $(node --version)"
+    else
+        echo -e "${RED}Node.js 安装失败。${NC}你可以打开新终端输入 ${GREEN}claude${NC} 让它帮你修，或手动运行: ${CYAN}fnm install --lts${NC}"
+        exit 1
+    fi
 fi
 
 # ============================================================================
 # Step 4: Core dependencies (Node.js, pnpm, uv, AWS CLI, Chrome)
 # ============================================================================
-step 4 "Install core dependencies (Node.js, pnpm, uv, AWS CLI)"
+step 4 "Install core dependencies (pnpm, uv, AWS CLI)"
 
-# Node.js
-if check_command node; then
-    success "Node.js already installed: $(node --version)"
-else
-    info "Installing Node.js via Homebrew..."
-    if brew install node; then
-        success "Node.js installed: $(node --version)"
-    else
-        echo -e "${RED}Node.js 安装失败。${NC}你可以打开新终端输入 ${GREEN}claude${NC} 让它帮你修，或手动运行: ${CYAN}brew install node${NC}"
-        exit 1
-    fi
-fi
-
-# pnpm
+# pnpm (via corepack or npm fallback)
 if check_command pnpm; then
     success "pnpm already installed: $(pnpm --version)"
 else
     info "Installing pnpm..."
-    if npm install -g pnpm; then
+    if corepack enable 2>/dev/null && corepack prepare pnpm@latest --activate 2>/dev/null; then
+        success "pnpm installed via corepack"
+    elif npm install -g pnpm; then
         pnpm setup 2>/dev/null || true
         export PNPM_HOME="$HOME/Library/pnpm"
         export PATH="$PNPM_HOME:$PATH"
-        success "pnpm installed"
+        success "pnpm installed via npm"
     else
         echo -e "${RED}pnpm 安装失败。${NC}你可以打开新终端输入 ${GREEN}claude${NC} 让它帮你修，或手动运行: ${CYAN}npm install -g pnpm${NC}"
         exit 1
@@ -435,15 +421,20 @@ else
     fi
 fi
 
-# AWS CLI
+# AWS CLI (official pkg installer)
 if check_command aws; then
     success "AWS CLI already installed: $(aws --version 2>&1 | head -1)"
 else
-    info "Installing AWS CLI..."
-    if brew install awscli; then
+    info "Installing AWS CLI via official installer..."
+    AWSCLI_TMP="/tmp/awscli-install-$$"
+    mkdir -p "$AWSCLI_TMP"
+    if curl -fsSL "https://awscli.amazonaws.com/AWSCLIV2.pkg" -o "$AWSCLI_TMP/AWSCLIV2.pkg" \
+       && sudo installer -pkg "$AWSCLI_TMP/AWSCLIV2.pkg" -target /; then
+        rm -rf "$AWSCLI_TMP"
         success "AWS CLI installed: $(aws --version 2>&1 | head -1)"
     else
-        echo -e "${RED}AWS CLI 安装失败。${NC}你可以打开新终端输入 ${GREEN}claude${NC} 让它帮你修，或手动运行: ${CYAN}brew install awscli${NC}"
+        rm -rf "$AWSCLI_TMP"
+        echo -e "${RED}AWS CLI 安装失败。${NC}你可以打开新终端输入 ${GREEN}claude${NC} 让它帮你修，或手动从 ${CYAN}https://awscli.amazonaws.com/AWSCLIV2.pkg${NC} 下载安装"
         exit 1
     fi
 fi
@@ -453,12 +444,9 @@ CHROME_APP="/Applications/Google Chrome.app"
 if [ -d "$CHROME_APP" ]; then
     success "Google Chrome already installed"
 else
-    info "Installing Google Chrome..."
-    if brew install --cask google-chrome; then
-        success "Google Chrome installed"
-    else
-        warn "Chrome 自动安装失败。请手动从 https://www.google.com/chrome/ 下载安装，然后重新运行本脚本。"
-    fi
+    warn "未检测到 Google Chrome。Chrome DevTools MCP 需要 Chrome 才能工作。"
+    echo -e "  请手动从 ${CYAN}https://www.google.com/chrome/${NC} 下载安装，然后重新运行本脚本。"
+    echo -e "  ${YELLOW}安装会继续，但 Chrome 相关功能暂不可用。${NC}"
 fi
 
 # Verify AWS credentials (now that AWS CLI is available)
@@ -526,8 +514,8 @@ add_to_zshrc() {
     fi
 }
 
-add_to_zshrc '# Homebrew'
-add_to_zshrc 'eval "$(/opt/homebrew/bin/brew shellenv)"'
+add_to_zshrc '# fnm (Fast Node Manager)'
+add_to_zshrc 'eval "$(fnm env)"'
 add_to_zshrc '# pnpm'
 add_to_zshrc 'export PNPM_HOME="$HOME/Library/pnpm"'
 add_to_zshrc 'export PATH="$PNPM_HOME:$PATH"'
@@ -910,7 +898,7 @@ mkdir -p "$LAUNCH_DIR"
 OPENCLAW_BIN=$(which openclaw 2>/dev/null || echo "$HOME/Library/pnpm/openclaw")
 if [ ! -x "$OPENCLAW_BIN" ]; then
     # Try common fallback locations
-    for candidate in "$HOME/.local/bin/openclaw" "$HOME/Library/pnpm/openclaw" "/opt/homebrew/bin/openclaw"; do
+    for candidate in "$HOME/.local/bin/openclaw" "$HOME/Library/pnpm/openclaw"; do
         if [ -x "$candidate" ]; then
             OPENCLAW_BIN="$candidate"
             break
@@ -919,7 +907,7 @@ if [ ! -x "$OPENCLAW_BIN" ]; then
 fi
 
 # Build PATH string for LaunchAgents
-LAUNCH_PATH="$HOME/.local/bin:$HOME/Library/pnpm:$HOME/.npm-global/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+LAUNCH_PATH="$HOME/.local/bin:$HOME/Library/pnpm:$HOME/.npm-global/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 
 # Gateway plist
 cat > "$LAUNCH_DIR/ai.openclaw.gateway.plist" <<PLIST_EOF
@@ -1371,7 +1359,8 @@ cat > "$HOME/Documents/OneClaw/打开Claude对话.command" <<'ASKCLAUDE_EOF'
 # 打开Claude对话.command — Open Claude Code in interactive mode
 # Double-click this file to start chatting with Claude in Chinese.
 
-export PATH="$HOME/.local/bin:$HOME/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
+export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$HOME/Library/pnpm:/usr/local/bin:$PATH"
+eval "$(fnm env 2>/dev/null)" || true
 
 if ! command -v claude >/dev/null 2>&1; then
     echo "Claude Code not found. Please run: source ~/.zshrc"
@@ -1429,7 +1418,7 @@ echo "  ╚═══════════════════════
 echo -e "${NC}"
 
 echo -e "${BOLD}已安装的组件：${NC}"
-echo "  ✅ Homebrew, Node.js, pnpm, uv, AWS CLI"
+echo "  ✅ fnm, Node.js, pnpm, uv, AWS CLI"
 echo "  ✅ Claude Code（通过 Bedrock 调用 Claude 模型）"
 echo "  ✅ OpenClaw（Gateway + Node + Guardian 守护进程）"
 echo "  ✅ MCP 服务器（Chrome DevTools、AWS 文档）"
