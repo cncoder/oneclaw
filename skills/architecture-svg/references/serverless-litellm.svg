@@ -1,0 +1,94 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 560" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="13">
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <path d="M0,0 L10,3.5 L0,7" fill="none" stroke="#4cc9f0" stroke-width="1.5"/>
+    </marker>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#0d1117"/>
+      <stop offset="100%" style="stop-color:#161b22"/>
+    </linearGradient>
+    <linearGradient id="albGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#ff9900"/>
+      <stop offset="100%" style="stop-color:#e68a00"/>
+    </linearGradient>
+    <linearGradient id="llmGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#4361ee"/>
+      <stop offset="100%" style="stop-color:#3a0ca3"/>
+    </linearGradient>
+    <linearGradient id="bedrockGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#232f3e"/>
+      <stop offset="100%" style="stop-color:#1a1f2b"/>
+    </linearGradient>
+    <linearGradient id="rdsGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#4895ef"/>
+      <stop offset="100%" style="stop-color:#3b48cc"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Background -->
+  <rect width="900" height="560" rx="16" fill="url(#bgGrad)"/>
+
+  <!-- AWS Region border -->
+  <rect x="200" y="40" width="670" height="490" rx="14" fill="none" stroke="#30363d" stroke-width="1.5" stroke-dasharray="8,4"/>
+  <text x="220" y="65" font-size="11" fill="#8b949e" font-weight="600" letter-spacing="1">AWS CLOUD</text>
+
+  <!-- ===== Clients ===== -->
+  <rect x="25" y="140" width="140" height="44" rx="10" fill="#21262d" stroke="#4cc9f0" stroke-width="1.2"/>
+  <text x="95" y="167" text-anchor="middle" font-weight="600" fill="#e6edf3">🖥  Claude Code</text>
+
+  <rect x="25" y="220" width="140" height="44" rx="10" fill="#21262d" stroke="#4cc9f0" stroke-width="1.2"/>
+  <text x="95" y="247" text-anchor="middle" font-weight="600" fill="#e6edf3">🤖  OpenClaw</text>
+
+  <rect x="25" y="300" width="140" height="44" rx="10" fill="#21262d" stroke="#4cc9f0" stroke-width="1.2"/>
+  <text x="95" y="327" text-anchor="middle" font-weight="600" fill="#e6edf3">📱  自研应用</text>
+
+  <!-- Arrows: Clients → ALB -->
+  <path d="M165,162 Q200,162 230,230" fill="none" stroke="#4cc9f0" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <path d="M165,242 L225,242" fill="none" stroke="#4cc9f0" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <path d="M165,322 Q200,322 230,255" fill="none" stroke="#4cc9f0" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- ===== ALB ===== -->
+  <rect x="240" y="205" width="150" height="70" rx="12" fill="url(#albGrad)"/>
+  <text x="315" y="236" text-anchor="middle" font-weight="700" fill="#fff" font-size="16">ALB</text>
+  <text x="315" y="258" text-anchor="middle" fill="rgba(255,255,255,0.8)" font-size="11">HTTPS · TLS 1.3 · WAF</text>
+
+  <!-- Arrows: ALB → Auth split -->
+  <path d="M390,225 Q430,225 450,170" fill="none" stroke="#4cc9f0" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <path d="M390,255 Q430,255 450,310" fill="none" stroke="#4cc9f0" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- ===== API Key path ===== -->
+  <rect x="455" y="130" width="140" height="58" rx="10" fill="#21262d" stroke="#4361ee" stroke-width="1.5"/>
+  <text x="525" y="155" text-anchor="middle" font-weight="600" fill="#7b93fd" font-size="13">/v1/*  API</text>
+  <text x="525" y="175" text-anchor="middle" fill="#8b949e" font-size="11">API Key 认证</text>
+
+  <!-- ===== Cognito path ===== -->
+  <rect x="455" y="290" width="140" height="58" rx="10" fill="#21262d" stroke="#ff9900" stroke-width="1.5"/>
+  <text x="525" y="315" text-anchor="middle" font-weight="600" fill="#ffb84d" font-size="13">/ui  Admin</text>
+  <text x="525" y="335" text-anchor="middle" fill="#8b949e" font-size="11">Cognito 认证</text>
+
+  <!-- Arrows: Auth → LiteLLM -->
+  <path d="M595,159 Q640,159 660,210" fill="none" stroke="#4cc9f0" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <path d="M595,319 Q640,319 660,280" fill="none" stroke="#4cc9f0" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- ===== LiteLLM ===== -->
+  <rect x="640" y="195" width="200" height="90" rx="12" fill="url(#llmGrad)"/>
+  <text x="740" y="228" text-anchor="middle" font-weight="700" fill="#fff" font-size="16">LiteLLM</text>
+  <text x="740" y="250" text-anchor="middle" fill="rgba(255,255,255,0.7)" font-size="11">EKS Fargate · 2-10 pods</text>
+  <text x="740" y="270" text-anchor="middle" fill="rgba(255,255,255,0.7)" font-size="11">IRSA 零静态凭证</text>
+
+  <!-- Arrows: LiteLLM → Bedrock / RDS -->
+  <path d="M690,285 Q660,340 590,400" fill="none" stroke="#4cc9f0" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <path d="M790,285 Q810,340 810,400" fill="none" stroke="#4cc9f0" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- ===== Bedrock ===== -->
+  <rect x="470" y="405" width="190" height="90" rx="12" fill="url(#bedrockGrad)" stroke="#ff9900" stroke-width="1"/>
+  <text x="565" y="433" text-anchor="middle" font-weight="700" fill="#ff9900" font-size="14">Amazon Bedrock</text>
+  <text x="565" y="455" text-anchor="middle" fill="#8b949e" font-size="11">Claude 全系列 · Fallback</text>
+  <text x="565" y="475" text-anchor="middle" fill="#8b949e" font-size="11">跨 Region 负载均衡</text>
+
+  <!-- ===== RDS ===== -->
+  <rect x="700" y="405" width="140" height="90" rx="12" fill="url(#rdsGrad)"/>
+  <text x="770" y="438" text-anchor="middle" font-weight="700" fill="#fff" font-size="14">RDS</text>
+  <text x="770" y="458" text-anchor="middle" fill="rgba(255,255,255,0.7)" font-size="11">PostgreSQL</text>
+  <text x="770" y="478" text-anchor="middle" fill="rgba(255,255,255,0.7)" font-size="11">Key 管理 · 用量统计</text>
+</svg>

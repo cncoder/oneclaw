@@ -1,0 +1,179 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 680" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="13">
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <path d="M0,0 L10,3.5 L0,7" fill="none" stroke="#4cc9f0" stroke-width="1.5"/>
+    </marker>
+    <marker id="arrowGreen" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <path d="M0,0 L10,3.5 L0,7" fill="none" stroke="#2dd4bf" stroke-width="1.5"/>
+    </marker>
+    <marker id="arrowOrange" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <path d="M0,0 L10,3.5 L0,7" fill="none" stroke="#f59e0b" stroke-width="1.5"/>
+    </marker>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#0d1117"/>
+      <stop offset="100%" style="stop-color:#161b22"/>
+    </linearGradient>
+    <linearGradient id="supervisorGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#7c3aed"/>
+      <stop offset="100%" style="stop-color:#5b21b6"/>
+    </linearGradient>
+    <linearGradient id="agentGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#4361ee"/>
+      <stop offset="100%" style="stop-color:#3730a3"/>
+    </linearGradient>
+    <linearGradient id="riskGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#ef4444"/>
+      <stop offset="100%" style="stop-color:#b91c1c"/>
+    </linearGradient>
+    <linearGradient id="execGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#f59e0b"/>
+      <stop offset="100%" style="stop-color:#d97706"/>
+    </linearGradient>
+    <linearGradient id="bedrockGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#232f3e"/>
+      <stop offset="100%" style="stop-color:#1a1f2b"/>
+    </linearGradient>
+    <linearGradient id="frontendGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#0ea5e9"/>
+      <stop offset="100%" style="stop-color:#06b6d4"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Background -->
+  <rect width="960" height="680" rx="16" fill="url(#bgGrad)"/>
+
+  <!-- Title -->
+  <text x="480" y="32" text-anchor="middle" font-size="16" fill="#e6edf3" font-weight="700" letter-spacing="0.5">HermesBot — Multi-Agent AI Trading System</text>
+
+  <!-- ===== Frontend Layer ===== -->
+  <rect x="30" y="50" width="900" height="52" rx="10" fill="url(#frontendGrad)" opacity="0.15" stroke="#0ea5e9" stroke-width="1"/>
+  <text x="480" y="72" text-anchor="middle" font-size="12" fill="#67e8f9" font-weight="600">⚛ REACT 19 FRONTEND — Dashboard · Trades · Scanner · Strategy · Research · Vibe</text>
+  <text x="480" y="90" text-anchor="middle" font-size="10" fill="#8b949e">REST API (50+ endpoints) + WebSocket (real-time positions, decisions, PnL)</text>
+
+  <!-- Arrow: Frontend → Backend -->
+  <path d="M480,102 L480,118" fill="none" stroke="#4cc9f0" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- ===== Backend Container ===== -->
+  <rect x="30" y="120" width="900" height="400" rx="14" fill="none" stroke="#30363d" stroke-width="1.5" stroke-dasharray="8,4"/>
+  <text x="50" y="142" font-size="11" fill="#8b949e" font-weight="600" letter-spacing="1">⚡ FASTAPI BACKEND (:8000)</text>
+
+  <!-- ===== Trading Loop (orchestrator bar) ===== -->
+  <rect x="50" y="150" width="860" height="36" rx="8" fill="#21262d" stroke="#4cc9f0" stroke-width="1"/>
+  <text x="480" y="173" text-anchor="middle" font-size="12" fill="#e6edf3" font-weight="600">🔄 Trading Loop — SOURCES → DATA → LLM → RISK → EXEC → PNL → FUSE → IDLE</text>
+
+  <!-- Arrow: Loop → Supervisor -->
+  <path d="M480,186 L480,204" fill="none" stroke="#4cc9f0" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- ===== Supervisor ===== -->
+  <rect x="300" y="206" width="360" height="42" rx="10" fill="url(#supervisorGrad)" stroke="#a78bfa" stroke-width="1.2"/>
+  <text x="480" y="224" text-anchor="middle" font-size="13" fill="#f5f3ff" font-weight="700">🧠 Supervisor Agent</text>
+  <text x="480" y="240" text-anchor="middle" font-size="10" fill="#c4b5fd">Claude Opus 4.6 · Extended Thinking · Full Market Context</text>
+
+  <!-- ===== Sub-Agents Grid ===== -->
+  <!-- Row 1 -->
+  <rect x="50"  y="268" width="125" height="50" rx="8" fill="url(#agentGrad)" opacity="0.9"/>
+  <text x="112" y="288" text-anchor="middle" font-size="10" fill="#e6edf3" font-weight="600">📊 Market Analyst</text>
+  <text x="112" y="302" text-anchor="middle" font-size="9" fill="#93c5fd">K-line · EMA · BB · RSI</text>
+
+  <rect x="185" y="268" width="125" height="50" rx="8" fill="url(#agentGrad)" opacity="0.9"/>
+  <text x="247" y="288" text-anchor="middle" font-size="10" fill="#e6edf3" font-weight="600">💭 Sentiment</text>
+  <text x="247" y="302" text-anchor="middle" font-size="9" fill="#93c5fd">F&amp;G · News · Social</text>
+
+  <rect x="320" y="268" width="125" height="50" rx="8" fill="url(#agentGrad)" opacity="0.9"/>
+  <text x="382" y="288" text-anchor="middle" font-size="10" fill="#e6edf3" font-weight="600">🔗 On-chain</text>
+  <text x="382" y="302" text-anchor="middle" font-size="9" fill="#93c5fd">Funding · OI · Volume</text>
+
+  <rect x="455" y="268" width="125" height="50" rx="8" fill="url(#agentGrad)" opacity="0.9"/>
+  <text x="517" y="288" text-anchor="middle" font-size="10" fill="#e6edf3" font-weight="600">📰 News Intel</text>
+  <text x="517" y="302" text-anchor="middle" font-size="9" fill="#93c5fd">RSS · DEFCON · Macro</text>
+
+  <rect x="590" y="268" width="125" height="50" rx="8" fill="url(#agentGrad)" opacity="0.9"/>
+  <text x="652" y="288" text-anchor="middle" font-size="10" fill="#e6edf3" font-weight="600">🔍 Scanner</text>
+  <text x="652" y="302" text-anchor="middle" font-size="9" fill="#93c5fd">Playwright · Charts</text>
+
+  <rect x="725" y="268" width="125" height="50" rx="8" fill="url(#agentGrad)" opacity="0.9"/>
+  <text x="787" y="288" text-anchor="middle" font-size="10" fill="#e6edf3" font-weight="600">🧮 Calculator</text>
+  <text x="787" y="302" text-anchor="middle" font-size="9" fill="#93c5fd">Position · Fee · R:R</text>
+
+  <!-- Row 2 -->
+  <rect x="50"  y="328" width="125" height="50" rx="8" fill="url(#agentGrad)" opacity="0.9"/>
+  <text x="112" y="348" text-anchor="middle" font-size="10" fill="#e6edf3" font-weight="600">📈 Strategy Advisor</text>
+  <text x="112" y="362" text-anchor="middle" font-size="9" fill="#93c5fd">V16 Prompts · Regime</text>
+
+  <rect x="185" y="328" width="125" height="50" rx="8" fill="url(#agentGrad)" opacity="0.9"/>
+  <text x="247" y="348" text-anchor="middle" font-size="10" fill="#e6edf3" font-weight="600">⚖ Strategy Eval</text>
+  <text x="247" y="362" text-anchor="middle" font-size="9" fill="#93c5fd">Win Rate · PnL · Health</text>
+
+  <rect x="320" y="328" width="125" height="50" rx="8" fill="url(#agentGrad)" opacity="0.9"/>
+  <text x="382" y="348" text-anchor="middle" font-size="10" fill="#e6edf3" font-weight="600">🎓 Learner</text>
+  <text x="382" y="362" text-anchor="middle" font-size="9" fill="#93c5fd">Skills · Rules · Exp</text>
+
+  <rect x="455" y="328" width="125" height="50" rx="8" fill="url(#agentGrad)" opacity="0.9"/>
+  <text x="517" y="348" text-anchor="middle" font-size="10" fill="#e6edf3" font-weight="600">🔬 Research</text>
+  <text x="517" y="362" text-anchor="middle" font-size="9" fill="#93c5fd">Prompt · A/B Test</text>
+
+  <!-- Risk Manager (red) -->
+  <rect x="590" y="328" width="125" height="50" rx="8" fill="url(#riskGrad)"/>
+  <text x="652" y="348" text-anchor="middle" font-size="10" fill="#fef2f2" font-weight="600">🛡 Risk Manager</text>
+  <text x="652" y="362" text-anchor="middle" font-size="9" fill="#fecaca">9 Hard Limits · R1-R9</text>
+
+  <!-- Execution Agent (orange) -->
+  <rect x="725" y="328" width="125" height="50" rx="8" fill="url(#execGrad)"/>
+  <text x="787" y="348" text-anchor="middle" font-size="10" fill="#fffbeb" font-weight="600">⚡ Executor</text>
+  <text x="787" y="362" text-anchor="middle" font-size="9" fill="#fde68a">Orders · SL/TP · Fees</text>
+
+  <!-- Arrows: Supervisor → Sub-agents -->
+  <path d="M380,248 L112,268" fill="none" stroke="#a78bfa" stroke-width="1" opacity="0.5"/>
+  <path d="M420,248 L247,268" fill="none" stroke="#a78bfa" stroke-width="1" opacity="0.5"/>
+  <path d="M460,248 L382,268" fill="none" stroke="#a78bfa" stroke-width="1" opacity="0.5"/>
+  <path d="M500,248 L517,268" fill="none" stroke="#a78bfa" stroke-width="1" opacity="0.5"/>
+  <path d="M540,248 L652,268" fill="none" stroke="#a78bfa" stroke-width="1" opacity="0.5"/>
+  <path d="M580,248 L787,268" fill="none" stroke="#a78bfa" stroke-width="1" opacity="0.5"/>
+
+  <!-- ===== Risk Control Bar ===== -->
+  <rect x="50" y="395" width="860" height="36" rx="8" fill="#21262d" stroke="#ef4444" stroke-width="1.2"/>
+  <text x="480" y="418" text-anchor="middle" font-size="11" fill="#fca5a5" font-weight="600">🔒 CODE-ENFORCED RISK CONTROLS — R7 Stop-Loss · Min Position $200 · Fee Guard 30% · Cooldown 3 Cycles · Max Hold 10 · Circuit Breaker</text>
+
+  <!-- ===== Dispatcher + Circuit Breaker ===== -->
+  <rect x="50" y="445" width="420" height="36" rx="8" fill="#21262d" stroke="#2dd4bf" stroke-width="1"/>
+  <text x="260" y="468" text-anchor="middle" font-size="11" fill="#5eead4" font-weight="600">🎯 Dispatcher — F&amp;G Regime Switching · 6 Symbol Rotation · Adaptive Interval</text>
+
+  <rect x="490" y="445" width="420" height="36" rx="8" fill="#21262d" stroke="#f59e0b" stroke-width="1"/>
+  <text x="700" y="468" text-anchor="middle" font-size="11" fill="#fcd34d" font-weight="600">⚡ Circuit Breaker — 3 Consecutive Losses → 30min Cooldown → Auto-Reset</text>
+
+  <!-- ===== External Services ===== -->
+  <rect x="30" y="500" width="900" height="58" rx="10" fill="none" stroke="#30363d" stroke-width="1" stroke-dasharray="6,3"/>
+  <text x="50" y="518" font-size="10" fill="#8b949e" font-weight="600" letter-spacing="1">EXTERNAL SERVICES</text>
+
+  <!-- AWS Bedrock -->
+  <rect x="50" y="525" width="170" height="28" rx="6" fill="url(#bedrockGrad)" stroke="#ff9900" stroke-width="1"/>
+  <text x="135" y="544" text-anchor="middle" font-size="11" fill="#ff9900" font-weight="600">☁ AWS Bedrock</text>
+
+  <!-- Bybit -->
+  <rect x="240" y="525" width="170" height="28" rx="6" fill="#21262d" stroke="#f59e0b" stroke-width="1"/>
+  <text x="325" y="544" text-anchor="middle" font-size="11" fill="#fbbf24" font-weight="600">📈 Bybit API v5</text>
+
+  <!-- SQLite -->
+  <rect x="430" y="525" width="170" height="28" rx="6" fill="#21262d" stroke="#60a5fa" stroke-width="1"/>
+  <text x="515" y="544" text-anchor="middle" font-size="11" fill="#93c5fd" font-weight="600">🗄 SQLite (20 Tables)</text>
+
+  <!-- World Monitor -->
+  <rect x="620" y="525" width="170" height="28" rx="6" fill="#21262d" stroke="#34d399" stroke-width="1"/>
+  <text x="705" y="544" text-anchor="middle" font-size="11" fill="#6ee7b7" font-weight="600">🌍 World Monitor</text>
+
+  <!-- Model labels under Bedrock -->
+  <text x="135" y="568" text-anchor="middle" font-size="9" fill="#8b949e">Opus 4.6 · Sonnet 4.6 · DeepSeek R1</text>
+  <text x="325" y="568" text-anchor="middle" font-size="9" fill="#8b949e">Linear Perpetual · 6 Symbols</text>
+  <text x="515" y="568" text-anchor="middle" font-size="9" fill="#8b949e">WAL Mode · Trades · Decisions</text>
+  <text x="705" y="568" text-anchor="middle" font-size="9" fill="#8b949e">F&amp;G · BTC Dom · Macro · DEFCON</text>
+
+  <!-- ===== Legend ===== -->
+  <rect x="50" y="590" width="860" height="75" rx="8" fill="#161b22" stroke="#21262d" stroke-width="1"/>
+  <text x="70" y="610" font-size="10" fill="#8b949e" font-weight="600">TECH STACK</text>
+  <text x="70" y="628" font-size="10" fill="#e6edf3">AI: Claude Opus 4.6 + Sonnet 4.6 + DeepSeek R1 via AWS Bedrock</text>
+  <text x="70" y="644" font-size="10" fill="#e6edf3">Backend: Python 3.11+ · FastAPI · Strands Agents SDK · pandas-ta · aiosqlite</text>
+  <text x="70" y="660" font-size="10" fill="#e6edf3">Frontend: React 19 · TypeScript · Vite 6 · Tailwind CSS 4 · Recharts</text>
+  <text x="550" y="628" font-size="10" fill="#e6edf3">Exchange: Bybit API v5 (pybit) · USDT Perpetual</text>
+  <text x="550" y="644" font-size="10" fill="#e6edf3">Database: SQLite WAL · 20 tables · Indexed</text>
+  <text x="550" y="660" font-size="10" fill="#e6edf3">Infra: Docker · Nginx · AWS Bedrock Cross-Region</text>
+</svg>
