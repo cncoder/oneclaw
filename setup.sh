@@ -480,6 +480,25 @@ echo -e "如果后续步骤遇到问题，打开新终端窗口输入 ${CYAN}cla
 echo ""
 
 # ============================================================================
+# Step 2.5: Install Homebrew (many tools depend on it)
+# ============================================================================
+if check_command brew; then
+    success "Homebrew already installed: $(brew --version | head -1)"
+else
+    info "Installing Homebrew..."
+    if /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"; then
+        eval "$(/opt/homebrew/bin/brew shellenv)"
+        success "Homebrew installed"
+    else
+        echo -e "${RED}Homebrew 安装失败。${NC}请手动运行:"
+        echo -e "  ${CYAN}/bin/bash -c \"\$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\"${NC}"
+        exit 1
+    fi
+fi
+# Ensure brew is in PATH for this session
+eval "$(/opt/homebrew/bin/brew shellenv)" 2>/dev/null || true
+
+# ============================================================================
 # Step 3: fnm (Fast Node Manager) + Node.js
 # ============================================================================
 step 3 "Install fnm + Node.js"
@@ -489,7 +508,7 @@ if check_command fnm; then
     success "fnm already installed: $(fnm --version)"
 else
     info "Installing fnm (Fast Node Manager)..."
-    if curl -fsSL https://fnm.vercel.app/install | bash -s -- --force-no-brew --skip-shell; then
+    if curl -fsSL https://fnm.vercel.app/install | bash; then
         export PATH="$HOME/.local/share/fnm:$PATH"
         eval "$(fnm env 2>/dev/null)" || true
         success "fnm installed"
@@ -646,6 +665,8 @@ add_to_zshrc() {
     fi
 }
 
+add_to_zshrc '# Homebrew'
+add_to_zshrc 'eval "$(/opt/homebrew/bin/brew shellenv)"'
 add_to_zshrc '# fnm (Fast Node Manager)'
 add_to_zshrc 'eval "$(fnm env)"'
 add_to_zshrc '# pnpm'
