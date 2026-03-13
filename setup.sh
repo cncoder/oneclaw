@@ -159,17 +159,63 @@ fi
 step 1 "Install Claude Code"
 
 echo -e "${BOLD}Claude Code 是 AI 编程助手，无额外依赖，优先安装。${NC}"
-echo -e "后续步骤如果遇到问题，你可以随时打开新终端输入 ${GREEN}claude${NC} 让它帮你修复。\n"
+echo -e "后续步骤如果遇到问题，你可以随时${BOLD}打开新终端${NC}输入 ${GREEN}claude${NC} 让它帮你修复。\n"
+echo -e "${YELLOW}注意：安装完成后如果提示找不到 claude 命令，请关闭终端重新打开再试。${NC}\n"
+
+# Claude Code install puts binary in ~/.claude/local/bin/ and updates ~/.zshrc
+# We need to check multiple possible locations
+CLAUDE_SEARCH_PATHS=(
+    "$HOME/.claude/local/bin"
+    "$HOME/.local/bin"
+    "/usr/local/bin"
+    "/opt/homebrew/bin"
+)
+
+find_claude() {
+    for p in "${CLAUDE_SEARCH_PATHS[@]}"; do
+        if [ -x "$p/claude" ]; then
+            echo "$p"
+            return 0
+        fi
+    done
+    return 1
+}
 
 if check_command claude; then
     success "Claude Code already installed: $(claude --version 2>/dev/null || echo 'installed')"
+elif CLAUDE_BIN_DIR=$(find_claude); then
+    export PATH="$CLAUDE_BIN_DIR:$PATH"
+    success "Claude Code already installed (found in $CLAUDE_BIN_DIR): $(claude --version 2>/dev/null || echo 'installed')"
 else
     info "Installing Claude Code..."
     if curl -fsSL https://claude.ai/install.sh | bash; then
-        export PATH="$HOME/.local/bin:$PATH"
-        success "Claude Code installed"
+        # Reload PATH: source shell profile to pick up changes made by `claude install`
+        if [ -f "$HOME/.zshrc" ]; then
+            source "$HOME/.zshrc" 2>/dev/null || true
+        fi
+        # Also explicitly add known locations
+        for p in "${CLAUDE_SEARCH_PATHS[@]}"; do
+            [[ ":$PATH:" != *":$p:"* ]] && export PATH="$p:$PATH"
+        done
+
+        if check_command claude; then
+            success "Claude Code installed: $(claude --version 2>/dev/null || echo 'installed')"
+        elif CLAUDE_BIN_DIR=$(find_claude); then
+            export PATH="$CLAUDE_BIN_DIR:$PATH"
+            success "Claude Code installed (at $CLAUDE_BIN_DIR): $(claude --version 2>/dev/null || echo 'installed')"
+        else
+            echo ""
+            echo -e "${YELLOW}${BOLD}Claude Code 安装可能已成功，但当前终端找不到 claude 命令。${NC}"
+            echo -e "请${BOLD}关闭终端，重新打开一个新终端${NC}，然后重新运行本脚本。"
+            echo -e "如果仍然找不到，请手动运行："
+            echo -e "  ${CYAN}curl -fsSL https://claude.ai/install.sh | bash${NC}"
+            echo -e "  然后关闭终端重新打开，输入 ${GREEN}claude --version${NC} 验证。"
+            exit 1
+        fi
     else
-        echo -e "${RED}Claude Code 安装失败。请手动运行: ${CYAN}curl -fsSL https://claude.ai/install.sh | bash${NC}"
+        echo -e "${RED}Claude Code 安装失败。${NC}"
+        echo -e "请手动运行: ${CYAN}curl -fsSL https://claude.ai/install.sh | bash${NC}"
+        echo -e "安装完成后${BOLD}关闭终端重新打开${NC}，再重新运行本脚本。"
         exit 1
     fi
 fi
@@ -179,34 +225,62 @@ fi
 # ============================================================================
 step 2 "配置 AWS 凭证 + Claude Code"
 
-echo -e "${BOLD}接下来需要输入一些信息来配置环境。${NC}"
+echo -e "${BOLD}接下来检查 AWS 凭证配置...${NC}"
 echo -e "所有信息只保存在你的电脑上，不会上传到任何地方。\n"
 
-# AWS credentials
-echo -e "${CYAN}--- AWS 凭证（用于访问 Bedrock Claude 模型） ---${NC}"
-echo -e "  ${BOLD}没有 AWS 账号？${NC}找帮你装机的人要一组 Access Key 和 Secret Key。"
-echo -e "  ${BOLD}已有账号但没有密钥？${NC}登录 AWS Console → IAM → Users → 你的用户 → Security credentials → Create access key"
-echo ""
-echo -e "  ${BOLD}${YELLOW}IAM 用户需要以下权限（缺一不可）：${NC}"
-echo -e "  ${GREEN}bedrock:InvokeModel${NC}              — 调用模型（Claude Code + OpenClaw 核心）"
-echo -e "  ${GREEN}bedrock:InvokeModelWithResponseStream${NC} — 流式调用（实时对话）"
-echo -e "  ${GREEN}bedrock:ListFoundationModels${NC}     — 列出可用模型"
-echo -e "  ${GREEN}bedrock:GetFoundationModel${NC}       — 查询模型详情"
-echo -e ""
-echo -e "  ${BOLD}最简方式：${NC}给 IAM 用户附加 AWS 托管策略 ${GREEN}AmazonBedrockFullAccess${NC}"
-echo -e "  ${BOLD}最小权限：${NC}只需上面 4 个 Action，Resource 设为 ${GREEN}arn:aws:bedrock:*::foundation-model/*${NC}"
-echo -e ""
-echo -e "  ${YELLOW}还需要在 Bedrock 控制台开启模型访问：${NC}"
-echo -e "  AWS Console → Bedrock → Model access → 勾选 Anthropic Claude 全系列 → Save"
-echo ""
-ask_secret "请输入 AWS Access Key ID" AWS_AK
-ask_secret "请输入 AWS Secret Access Key（输入时不会显示）" AWS_SK true
+# Check if AWS credentials already exist and work
+AWS_CREDS_EXIST=false
+if [ -f "$HOME/.aws/credentials" ] && grep -q "aws_access_key_id" "$HOME/.aws/credentials" 2>/dev/null; then
+    # Extract existing values for later use
+    AWS_AK=$(grep -m1 "aws_access_key_id" "$HOME/.aws/credentials" | sed 's/.*=[ ]*//')
+    AWS_SK=$(grep -m1 "aws_secret_access_key" "$HOME/.aws/credentials" | sed 's/.*=[ ]*//')
 
-echo ""
-echo -e "${CYAN}--- AWS 区域配置 ---${NC}"
-echo -e "  默认使用 ${GREEN}us-west-2${NC}（美国西部-俄勒冈），直接按回车即可"
-echo -e "  其他常用区域：us-east-1（美东）、eu-west-1（欧洲）、ap-northeast-1（东京）"
-ask_optional "AWS Bedrock 区域" AWS_BEDROCK_REGION "us-west-2"
+    # Try to validate credentials with a lightweight API call
+    if check_command aws && aws sts get-caller-identity >/dev/null 2>&1; then
+        AWS_CREDS_EXIST=true
+        AWS_IDENTITY=$(aws sts get-caller-identity --output text --query 'Arn' 2>/dev/null || echo "unknown")
+        success "已检测到有效的 AWS 凭证: ${AWS_IDENTITY}"
+        echo -e "  ${YELLOW}如需更换凭证，请手动编辑 ~/.aws/credentials${NC}"
+    else
+        warn "~/.aws/credentials 存在但凭证无效或 AWS CLI 未安装，稍后验证"
+        # Still use existing values — they may work once AWS CLI is installed
+        AWS_CREDS_EXIST=true
+    fi
+fi
+
+if [ "$AWS_CREDS_EXIST" = false ]; then
+    # AWS credentials
+    echo -e "${CYAN}--- AWS 凭证（用于访问 Bedrock Claude 模型） ---${NC}"
+    echo -e "  ${BOLD}没有 AWS 账号？${NC}找帮你装机的人要一组 Access Key 和 Secret Key。"
+    echo -e "  ${BOLD}已有账号但没有密钥？${NC}登录 AWS Console → IAM → Users → 你的用户 → Security credentials → Create access key"
+    echo ""
+    echo -e "  ${BOLD}${YELLOW}IAM 用户需要以下权限（缺一不可）：${NC}"
+    echo -e "  ${GREEN}bedrock:InvokeModel${NC}              — 调用模型（Claude Code + OpenClaw 核心）"
+    echo -e "  ${GREEN}bedrock:InvokeModelWithResponseStream${NC} — 流式调用（实时对话）"
+    echo -e "  ${GREEN}bedrock:ListFoundationModels${NC}     — 列出可用模型"
+    echo -e "  ${GREEN}bedrock:GetFoundationModel${NC}       — 查询模型详情"
+    echo -e ""
+    echo -e "  ${BOLD}最简方式：${NC}给 IAM 用户附加 AWS 托管策略 ${GREEN}AmazonBedrockFullAccess${NC}"
+    echo -e "  ${BOLD}最小权限：${NC}只需上面 4 个 Action，Resource 设为 ${GREEN}arn:aws:bedrock:*::foundation-model/*${NC}"
+    echo -e ""
+    echo -e "  ${YELLOW}还需要在 Bedrock 控制台开启模型访问：${NC}"
+    echo -e "  AWS Console → Bedrock → Model access → 勾选 Anthropic Claude 全系列 → Save"
+    echo ""
+    ask_secret "请输入 AWS Access Key ID" AWS_AK
+    ask_secret "请输入 AWS Secret Access Key（输入时不会显示）" AWS_SK true
+fi
+
+# Region: read from existing config or ask
+if [ -f "$HOME/.aws/config" ] && grep -q "region" "$HOME/.aws/config" 2>/dev/null; then
+    AWS_BEDROCK_REGION=$(grep -m1 "region" "$HOME/.aws/config" | sed 's/.*=[ ]*//')
+    success "已检测到 AWS 区域: ${AWS_BEDROCK_REGION}"
+else
+    echo ""
+    echo -e "${CYAN}--- AWS 区域配置 ---${NC}"
+    echo -e "  默认使用 ${GREEN}us-west-2${NC}（美国西部-俄勒冈），直接按回车即可"
+    echo -e "  其他常用区域：us-east-1（美东）、eu-west-1（欧洲）、ap-northeast-1（东京）"
+    ask_optional "AWS Bedrock 区域" AWS_BEDROCK_REGION "us-west-2"
+fi
 
 # Claude Code uses the same region — derive inference profile prefix
 CC_BEDROCK_REGION="$AWS_BEDROCK_REGION"
@@ -278,6 +352,22 @@ EOF
     else
         warn "~/.aws/config [default] already exists, not overwriting (aws cli not available for safe merge)"
     fi
+fi
+
+# --- Verify Bedrock access ---
+if check_command aws; then
+    info "验证 Bedrock 模型访问权限..."
+    if aws bedrock list-foundation-models --region "$AWS_BEDROCK_REGION" --query 'modelSummaries[?starts_with(modelId, `anthropic.claude`)].[modelId]' --output text >/dev/null 2>&1; then
+        success "Bedrock 权限验证通过"
+    else
+        warn "无法访问 Bedrock 模型。可能的原因："
+        echo -e "  1. IAM 用户缺少 ${GREEN}bedrock:ListFoundationModels${NC} 权限"
+        echo -e "  2. 区域 ${GREEN}${AWS_BEDROCK_REGION}${NC} 未开启 Bedrock 模型访问"
+        echo -e "  3. 请在 AWS Console → Bedrock → Model access 中勾选 Anthropic Claude 系列"
+        echo -e "  ${YELLOW}安装将继续，但 Claude Code 可能无法正常使用。请稍后检查权限。${NC}"
+    fi
+else
+    info "AWS CLI 尚未安装，Bedrock 权限将在后续步骤验证"
 fi
 
 # --- Configure Claude Code for Bedrock ---
