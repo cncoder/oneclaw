@@ -489,7 +489,7 @@ if check_command fnm; then
     success "fnm already installed: $(fnm --version)"
 else
     info "Installing fnm (Fast Node Manager)..."
-    if curl -fsSL https://fnm.vercel.app/install | bash; then
+    if curl -fsSL https://fnm.vercel.app/install | bash -s -- --force-no-brew --skip-shell; then
         export PATH="$HOME/.local/share/fnm:$PATH"
         eval "$(fnm env 2>/dev/null)" || true
         success "fnm installed"
