@@ -1,9 +1,11 @@
 ---
 name: claude-code
-description: "Use Claude Code as your autonomous coding agent. Covers task dispatch, debugging workflow, slot-machine recovery, and best practices for getting the most out of Claude Code via OpenClaw."
+description: "Use Claude Code as your autonomous coding agent. Covers task dispatch via tmux, debugging workflow, slot-machine recovery, and best practices for getting the most out of Claude Code via OpenClaw."
 metadata:
   openclaw:
     emoji: "⚡"
+    requires:
+      bins: ["tmux", "claude"]
 ---
 
 # Skill: claude-code
@@ -26,6 +28,95 @@ Claude Code is a full autonomous coding agent, not just a code generator. Treat 
 |------|----------|----------|
 | **Peripheral / async** | Prototypes, visualizations, test generation, refactoring, unfamiliar codebase | ralph-loop or auto-accept, let it run |
 | **Core / sync** | Core business logic, security changes, config changes, multi-component coordination | Interactive mode, supervise in real-time |
+
+---
+
+## tmux Session Management (OpenClaw ↔ Claude Code)
+
+Claude Code uses an **Ink TUI framework** — it's not a regular shell. OpenClaw dispatches and monitors Claude Code through tmux sessions.
+
+### Architecture
+
+Each CC task gets its own tmux session (`cc-{task}`), tracked via `/tmp/cc-active-tab`. Three scripts handle the lifecycle:
+
+| Script | Purpose | Core mechanism |
+|--------|---------|----------------|
+| `cc-start.sh` | Create tmux session + launch CC | Writes `/tmp/cc-active-tab` |
+| `cc-send.sh` | Send messages to the right session | 3-level fallback resolution |
+| `cc-read.sh` | Read terminal output | `tmux capture-pane` |
+
+### Starting a New CC Task
+
+```bash
+# Standard launch (uses current directory)
+scripts/cc-start.sh daily-digest
+
+# With specific working directory
+scripts/cc-start.sh tts-fix ~/projects/my-app
+
+# View / attach to session
+tmux attach -t cc-daily-digest
+tmux ls  # List all sessions
+```
+
+**❌ Never launch CC with raw `tmux new-session`** — always use `cc-start.sh` so the active tab tracker stays in sync.
+
+### Sending Messages
+
+```bash
+# Auto-locate most recently launched CC session
+scripts/cc-send.sh "your task instruction"
+
+# Target a specific session (when multiple CC sessions exist)
+scripts/cc-send.sh --session cc-daily "your task instruction"
+
+# Multi-line via stdin
+scripts/cc-send.sh <<'MSG'
+Read src/main.py,
+describe the data flow and key functions.
+MSG
+```
+
+**Session resolution priority** (3-level fallback):
+1. `--session <name>` → Exact tmux session name
+2. `/tmp/cc-active-tab` → Most recently launched session (validated)
+3. Last `cc-*` session found → Fallback
+
+### Reading Terminal Output
+
+```bash
+scripts/cc-read.sh                       # Auto-locate, last 50 lines
+scripts/cc-read.sh --session cc-daily    # Specific session
+scripts/cc-read.sh --lines 100           # Last 100 lines
+scripts/cc-read.sh --full                # Full scrollback
+```
+
+### Judging CC State
+
+| Terminal shows | Status | Action |
+|----------------|--------|--------|
+| `>` empty prompt | Idle, ready for input | Send next sub-task |
+| `Bootstrapping...` / `Cogitating...` | Context compaction | **Wait. Don't interrupt. Don't /clear.** |
+| `Enter to confirm` | Waiting for permission | `tmux send-keys -t <session> Enter` |
+| `Error` / `failed` | Something broke | Assess: interrupt and restart? |
+| No change for 5+ min | Possibly stuck | Escalate to user |
+
+### Heartbeat Integration
+
+Monitor CC health in your OpenClaw heartbeat:
+
+```bash
+CC_SESSIONS=$(tmux ls -F '#{session_name}' 2>/dev/null | grep '^cc-' || true)
+CC_PROC=$(pgrep -f "claude --danger" | head -1)
+
+if [ -z "$CC_SESSIONS" ] && [ -z "$CC_PROC" ]; then
+    echo "CC not running"
+elif [ -z "$CC_SESSIONS" ] && [ -n "$CC_PROC" ]; then
+    echo "⚠️ CC process alive but tmux session lost"
+elif [ -n "$CC_SESSIONS" ] && [ -z "$CC_PROC" ]; then
+    echo "⚠️ tmux session exists but CC process exited"
+fi
+```
 
 ---
 
@@ -150,8 +241,6 @@ When encountering bugs, test failures, or unexpected behavior — **no fixes wit
 
 ## Two-Phase Work Method (for complex tasks)
 
-From Anthropic Legal + Growth Marketing teams:
-
 1. **Planning phase**: Brainstorm in conversation, generate structured prompt:
    ```markdown
    ## Goal
@@ -178,72 +267,23 @@ From Anthropic Legal + Growth Marketing teams:
 | **Self-correction** | Auto-fixes build failures until passing |
 | **Skill plugins** | TDD, code-review, security-review, E2E, frontend-design (50+ skills) |
 | **Sub-agent teams** | researcher + coder + reviewer working in parallel |
-| **Browser control** | chrome-devtools MCP (CDP 9222) |
+| **Browser control** | chrome-devtools MCP (CDP) |
 | **Doc queries** | context7 MCP (latest API docs) |
-
----
-
-## Terminal Interaction (OpenClaw dispatching Claude Code)
-
-OpenClaw dispatches Claude Code through the system terminal. The exact mechanics vary by machine, but the core pattern is the same.
-
-### Launching Claude Code
-
-```bash
-# Open a new terminal tab/window, then:
-cd /path/to/project
-claude
-
-# Or for one-shot tasks (no interaction needed):
-claude -p "your task description here"
-```
-
-**Key points:**
-- Claude Code uses an **Ink TUI framework** — it's not a regular shell. Pasting text doesn't auto-submit; you must press **Enter/Return** to confirm.
-- If OpenClaw sends commands via AppleScript/osascript, `write text` alone won't submit — a `key code 36` (Return) is required after.
-- Always verify the terminal is showing the `>` prompt before sending the next task.
-
-### Reading Terminal State
-
-| Terminal shows | Status | Action |
-|----------------|--------|--------|
-| `>` empty prompt | Idle, ready for input | Send next sub-task |
-| `Bootstrapping...` / `Cogitating...` | Context compaction in progress | **Wait. Do not interrupt. Do not /clear.** |
-| `Enter to confirm` | Waiting for permission | Press Enter |
-| `Error` / `failed` | Something broke | Assess whether to interrupt and restart |
-| No change for 5+ min | Possibly stuck | Escalate to user |
-
-### macOS-Specific Notes
-
-- **iTerm2** is recommended over Terminal.app for better tab management and notifications
-- Enable iTerm2 notifications (Settings → Profiles → Terminal → Post notifications) to get alerts when long tasks finish
-- Claude Code path is typically `~/.local/bin/claude`
-- If running inside OpenClaw agent environment, must `unset CLAUDECODE` before spawning a nested Claude Code session
-
-### Linux / Remote Server Notes
-
-- Use `tmux` or `screen` for persistent sessions
-- Claude Code TUI works over SSH but ensure terminal supports 256 colors
-- For headless one-shot: `claude -p "task" 2>&1 | tee /tmp/cc-output.log`
-
-### Multi-Tab Best Practices
-
-- **One repo per Claude Code instance** — never run 2 instances on the same repo
-- **Different tasks = different tabs/sessions** — don't mix unrelated work
-- Label tabs clearly (e.g., `cc-bugfix`, `cc-feature-x`)
-- Independent tasks should run in **parallel** across tabs
 
 ---
 
 ## Anti-Patterns (learned the hard way)
 
-- Don't give 500-word requirement docs at once (split small)
-- Don't write code yourself instead of delegating to Claude Code
-- Don't run multiple Claude Code instances on the same repo simultaneously
-- Don't use background one-shot for complex tasks
-- Don't claim "done" without verification evidence
-- Don't try to fix Claude's drifted intermediate state (reset and restart)
-- Don't wait until Claude finishes to evaluate (interrupt early if drifting)
+- ❌ Give 500-word requirement docs at once (split small)
+- ❌ Write code yourself instead of delegating to Claude Code
+- ❌ Run multiple Claude Code instances on the same repo
+- ❌ Use background one-shot for complex tasks
+- ❌ Claim "done" without verification evidence
+- ❌ Try to fix Claude's drifted intermediate state (reset and restart)
+- ❌ Wait until Claude finishes to evaluate (interrupt early if drifting)
+- ❌ Manually `/clear` (let auto-compact handle context management)
+- ❌ Send new messages while Claude Code is actively working (gets queued, causes confusion)
+- ❌ Have Claude Code read files >10K chars at once (split into segments)
 
 ---
 
