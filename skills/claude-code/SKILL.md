@@ -1,6 +1,6 @@
 ---
 name: claude-code
-description: "Use Claude Code as your autonomous coding agent. Covers task dispatch via tmux, interactive/background/ralph-loop modes, progressive task delivery, slot-machine recovery, and best practices for getting the most out of Claude Code via OpenClaw."
+description: "Use Claude Code as your autonomous coding agent. Covers task dispatch via tmux, interactive/background/loop modes, progressive task delivery, slot-machine recovery, and best practices for getting the most out of Claude Code via OpenClaw."
 metadata:
   openclaw:
     emoji: "⚡"
@@ -22,13 +22,13 @@ Pick the right mode before starting:
 |----------|------|------|
 | Multi-file changes, need visibility | **Interactive** | Default choice |
 | Single file, <2 min, predictable output | **Background one-shot** | Quick tasks |
-| Self-iterating feature development | **ralph-loop** | Large autonomous tasks |
+| Self-iterating feature development | **loop** | Large autonomous tasks |
 
 **Classify the task first** (from Anthropic internal practices):
 
 | Type | Examples | Strategy |
 |------|----------|----------|
-| **Peripheral / async** | Prototypes, test generation, refactoring, unfamiliar codebase | ralph-loop or auto-accept, let it run |
+| **Peripheral / async** | Prototypes, test generation, refactoring, unfamiliar codebase | loop or auto-accept, let it run |
 | **Core / sync** | Core business logic, security changes, config, multi-component coordination | Interactive mode, supervise in real-time |
 
 ---
@@ -198,22 +198,22 @@ unset CLAUDECODE && claude --dangerously-skip-permissions -p "describe the task"
 
 ---
 
-## ralph-loop Mode (Large Autonomous Tasks)
+## loop Mode (Large Autonomous Tasks)
 
 **Always checkpoint before launching** (Slot Machine):
 
 ```bash
 # 1. Checkpoint
-git add -A && git commit -m "checkpoint: before ralph-loop"
+git add -A && git commit -m "checkpoint: before loop"
 
 # 2. Launch
-/ralph-loop "Build X. Output <promise>DONE</promise> when tests pass." \
+/loop "Build X. Output <promise>DONE</promise> when tests pass." \
   --completion-promise "DONE" --max-iterations 15
 ```
 
 - Success → merge
 - Failure → `git reset --hard HEAD~1` + revise prompt + retry
-- Cancel: `/cancel-ralph`
+- Cancel: `/loop stop`
 
 ---
 
