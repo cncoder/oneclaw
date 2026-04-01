@@ -18,11 +18,12 @@ Claude Code is a full autonomous coding agent — not just a code generator. Tre
 
 Pick the right mode before starting:
 
-| Scenario | Mode | When |
-|----------|------|------|
-| Multi-file changes, need visibility | **Interactive** | Default choice |
-| Single file, <2 min, predictable output | **Background one-shot** | Quick tasks |
-| Self-iterating feature development | **`/loop`** | Large autonomous tasks |
+| Scenario | Mode | When | Dispatch Method |
+|----------|------|------|-----------------|
+| Multi-file changes, need visibility | **Interactive** | Default choice | tmux (human typing) |
+| Simple one-off, predictable output | **Background one-shot** | Quick tasks | `claude -p` |
+| Self-iterating feature development | **`/loop`** | Large autonomous tasks | tmux (human starts `/loop`) |
+| cron / script / automated pipeline | **Programmatic** | Automation & scheduling | `claude -p --output-format stream-json` |
 
 **Classify the task first:**
 
@@ -33,7 +34,57 @@ Pick the right mode before starting:
 
 ---
 
-## tmux Session Management
+## Programmatic Dispatch
+
+When you need to invoke Claude Code from scripts, cron jobs, or automated pipelines, **do not use tmux send-keys**. Use `claude -p` (one-shot / print mode) instead.
+
+### Interactive vs Programmatic
+
+| | Interactive (tmux + TUI) | Programmatic (`claude -p`) |
+|---|---|---|
+| **Who** | Human operator | Script / cron / agent |
+| **Visibility** | Real-time TUI, can watch & interrupt | stdout/stderr, parse JSON output |
+| **Reliability** | Depends on human typing into tmux | Deterministic, no TUI involvement |
+| **Multi-turn** | Yes (send messages back and forth) | No (single prompt → single response) |
+| **Use case** | Supervising complex tasks, `/loop` | Automated tasks, CI/CD, scheduled jobs |
+
+### cc-dispatch.sh
+
+A simple wrapper for programmatic dispatch:
+
+```bash
+#!/bin/bash
+# Dispatch a task to Claude Code programmatically (bypasses Ink TUI)
+# Usage: cc-dispatch.sh 'your task description' [working-directory]
+TASK="$1"
+DIR="${2:-.}"
+cd "$DIR" && claude -p --dangerously-skip-permissions "$TASK"
+```
+
+For structured output (useful in pipelines):
+
+```bash
+cd "$DIR" && claude -p --dangerously-skip-permissions --output-format stream-json "$TASK"
+```
+
+### When to Use Programmatic Mode
+
+- Cron-scheduled tasks (nightly code reviews, dependency updates)
+- Script-driven pipelines (CI, OpenClaw agent dispatch)
+- Any scenario where no human is watching the terminal
+- Batch processing multiple tasks sequentially
+
+### When NOT to Use Programmatic Mode
+
+- Tasks requiring mid-course correction or human judgment
+- Multi-turn exploration (use interactive mode)
+- Tasks needing MCP tools that require interactive auth
+
+---
+
+## tmux Session Management (Human-Interactive Only)
+
+> **Note:** The tmux scripts below (`cc-start.sh`, `cc-send.sh`, `cc-read.sh`) are designed for **human-interactive sessions** where a person is watching and typing. For programmatic/automated dispatch, use `claude -p` instead — see [Programmatic Dispatch](#programmatic-dispatch) above.
 
 Claude Code uses an Ink TUI framework — it's not a regular shell. OpenClaw dispatches and monitors Claude Code through tmux sessions, which is more reliable than osascript/AppleScript.
 
@@ -324,6 +375,15 @@ fi
 
 ---
 
+## Hard Rules / Gotchas
+
+- ⚠️ **tmux send-keys cannot reliably send messages to Claude Code** — Ink TUI's raw mode stdin handler intercepts characters sent via `tmux send-keys`. Programmatic dispatch **must** use `claude -p` one-shot mode.
+  - **Root cause:** Ink (React for terminals) calls `setRawMode(true)` on stdin at mount time. In raw mode, tmux send-keys simulates keypresses that get consumed by Ink's internal keypress handler but are not forwarded to the Claude Code input prompt. This makes `send-keys` unreliable for automation — characters may be silently dropped or misinterpreted.
+  - **Workaround for interactive sessions:** `cc-send.sh` uses `load-buffer` + `paste-buffer` instead of `send-keys -l`, which is more reliable for human-initiated sends. But even this approach is fragile for fully automated scenarios.
+- ⚠️ **Do not `tmux send-keys` to start `/loop`** from a script — have a human start it interactively, or use `claude -p` with a self-contained prompt instead.
+
+---
+
 ## Anti-Patterns
 
 | Don't | Do instead |
@@ -339,3 +399,5 @@ fi
 | Use raw `tmux new-session` | Always use `cc-start.sh` |
 | Send next message before confirming delivery | Check with `cc-read.sh --status` first |
 | Let CC read >10K char files at once | Split reads to avoid context overflow |
+| Use `tmux send-keys` for automated dispatch | Use `claude -p` for programmatic/script dispatch |
+| Pipe input to Claude Code's stdin in TUI mode | Use `claude -p` which reads stdin correctly |
