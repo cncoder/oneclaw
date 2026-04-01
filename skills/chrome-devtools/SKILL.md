@@ -1,6 +1,6 @@
 ---
 name: chrome-devtools
-description: "Browser automation via Chrome DevTools Protocol (CDP). Use for UI automation, form filling, data scraping, E2E testing, screenshot capture, and interacting with logged-in platforms. Use this instead of the browser tool when you are in Claude Code context."
+description: "Browser automation via Chrome DevTools Protocol (CDP). Use for UI automation, form filling, data scraping, E2E testing, screenshot capture, performance auditing, and interacting with logged-in platforms. Use this instead of the browser tool when you are in Claude Code context."
 metadata:
   openclaw:
     emoji: "🌐"
@@ -8,7 +8,7 @@ metadata:
 
 # Skill: chrome-devtools
 
-Browser automation via Chrome DevTools Protocol. When Claude Code needs to interact with web pages — scrape data, verify UI, fill forms, test flows — use CDP through the `chrome-devtools` MCP server.
+Browser automation via Chrome DevTools Protocol. When Claude Code needs to interact with web pages — scrape data, verify UI, fill forms, test flows, audit performance — use CDP through the `chrome-devtools` MCP server.
 
 > **Golden rule: Always take a snapshot before clicking.** Element UIDs change after every page navigation.
 
@@ -33,7 +33,7 @@ Browser automation via Chrome DevTools Protocol. When Claude Code needs to inter
 mcp__chrome-devtools__new_page  url="https://example.com"
 
 # 2. Wait for content
-mcp__chrome-devtools__wait_for  text=["loaded"]
+mcp__chrome-devtools__wait_for  text=["Example Domain"]
 
 # 3. Take snapshot (get element tree + UIDs)
 mcp__chrome-devtools__take_snapshot
@@ -55,32 +55,38 @@ mcp__chrome-devtools__new_page       url="https://..."          # Always start h
 mcp__chrome-devtools__navigate_page  type="url" url="https://..." # Within YOUR tab only
 mcp__chrome-devtools__navigate_page  type="reload"
 mcp__chrome-devtools__navigate_page  type="back"
+mcp__chrome-devtools__navigate_page  type="forward"
 ```
 
 ### Reading Pages
 ```
-# Accessibility tree with UIDs — use for interaction
+# Accessibility tree with UIDs — primary tool for interaction
 mcp__chrome-devtools__take_snapshot
 
 # Visual screenshot — use for layout verification or AI analysis
 mcp__chrome-devtools__take_screenshot
 mcp__chrome-devtools__take_screenshot  fullPage=true
+mcp__chrome-devtools__take_screenshot  uid="<uid>"              # Screenshot specific element
+mcp__chrome-devtools__take_screenshot  filePath="/tmp/page.png" # Save to file
 ```
 
 ### Interaction
 ```
 mcp__chrome-devtools__click      uid="<uid>"
-mcp__chrome-devtools__fill       uid="<uid>"  value="text"
+mcp__chrome-devtools__click      uid="<uid>"  dblClick=true     # Double-click
+mcp__chrome-devtools__hover      uid="<uid>"                    # Hover (reveal tooltips/menus)
+mcp__chrome-devtools__fill       uid="<uid>"  value="text"      # Input / textarea / select
 mcp__chrome-devtools__fill_form  elements=[{"uid":"<uid1>","value":"val1"}, ...]
 mcp__chrome-devtools__type_text  text="search term"  submitKey="Enter"
 mcp__chrome-devtools__press_key  key="Enter"
 mcp__chrome-devtools__press_key  key="Control+A"
+mcp__chrome-devtools__drag       from_uid="<uid1>"  to_uid="<uid2>"
 ```
 
 ### Wait & Verify
 ```
-mcp__chrome-devtools__wait_for  text=["Dashboard", "Welcome"]
-mcp__chrome-devtools__wait_for  text=["loaded"]  timeout=10000
+mcp__chrome-devtools__wait_for  text=["Dashboard", "Welcome"]   # Resolves when ANY appears
+mcp__chrome-devtools__wait_for  text=["loaded"]  timeout=10000  # Custom timeout (ms)
 ```
 
 ### Tab Management
@@ -88,21 +94,60 @@ mcp__chrome-devtools__wait_for  text=["loaded"]  timeout=10000
 mcp__chrome-devtools__list_pages
 mcp__chrome-devtools__select_page  pageId=1
 mcp__chrome-devtools__close_page   pageId=2
+mcp__chrome-devtools__resize_page  width=1280  height=720
 ```
 
 ### JavaScript & Network
 ```
 mcp__chrome-devtools__evaluate_script       function="() => document.title"
+mcp__chrome-devtools__evaluate_script       function="(el) => el.innerText"  args=["<uid>"]
 mcp__chrome-devtools__list_network_requests resourceTypes=["fetch","xhr"]
 mcp__chrome-devtools__get_network_request   reqid=42
 mcp__chrome-devtools__list_console_messages types=["error","warn"]
+mcp__chrome-devtools__get_console_message   msgid=5
 ```
 
 ### Dialogs & File Upload
 ```
 mcp__chrome-devtools__handle_dialog  action="accept"
 mcp__chrome-devtools__handle_dialog  action="dismiss"
+mcp__chrome-devtools__handle_dialog  action="accept"  promptText="my input"
 mcp__chrome-devtools__upload_file    uid="<file-input-uid>"  filePath="/path/to/file"
+```
+
+### Device Emulation
+```
+# Emulate mobile viewport
+mcp__chrome-devtools__emulate  viewport="375x812x3,mobile,touch"
+
+# Dark mode
+mcp__chrome-devtools__emulate  colorScheme="dark"
+
+# Geolocation
+mcp__chrome-devtools__emulate  geolocation="37.7749x-122.4194"
+
+# Throttle network
+mcp__chrome-devtools__emulate  networkConditions="Slow 3G"
+
+# Throttle CPU (2x slowdown)
+mcp__chrome-devtools__emulate  cpuThrottlingRate=2
+```
+
+### Performance & Memory
+
+```
+# Lighthouse audit (accessibility, SEO, best practices)
+mcp__chrome-devtools__lighthouse_audit  device="desktop"  mode="navigation"
+
+# Performance trace — navigate to target URL first
+mcp__chrome-devtools__performance_start_trace  reload=true  autoStop=true
+# If autoStop=false, manually stop:
+mcp__chrome-devtools__performance_stop_trace
+# Drill into specific insights from the trace results:
+mcp__chrome-devtools__performance_analyze_insight  insightSetId="<id>"  insightName="LCPBreakdown"
+
+# Heap snapshot (memory leak debugging)
+mcp__chrome-devtools__take_memory_snapshot  filePath="/tmp/heap.heapsnapshot"
 ```
 
 ---
@@ -145,6 +190,25 @@ Don't just look at the first screen. Complete data requires:
 5. Aggregate results
 ```
 
+### Form Filling (Login, Search, etc.)
+
+```
+1. new_page → target URL
+2. take_snapshot → find form fields
+3. fill_form → fill all fields at once (more reliable than individual fill calls)
+4. click → submit button
+5. wait_for → success indicator
+```
+
+### Performance Audit
+
+```
+1. new_page → target URL
+2. lighthouse_audit → get scores for a11y, SEO, best practices
+3. performance_start_trace reload=true → record page load
+4. performance_analyze_insight → drill into LCP, CLS, etc.
+```
+
 ---
 
 ## Hard Rules
@@ -159,48 +223,83 @@ Don't just look at the first screen. Complete data requires:
 
 5. **Never close the main Chrome process** — CDP connection depends on it.
 
+6. **Don't overwrite user tabs** — Closing or navigating pages you didn't open can destroy user state. Only manage pages you created with `new_page`.
+
 ---
 
 ## Setup
 
-Chrome must be running with remote debugging enabled:
+Chrome must be running with remote debugging enabled for CDP to work.
+
+### Verify CDP is Running
 
 ```bash
-# Verify CDP is available
 curl -s http://127.0.0.1:9222/json/version
+```
 
-# If not running, start Chrome with CDP
-google-chrome --remote-debugging-port=9222 \
-  --user-data-dir="$HOME/.chrome-cdp-profile"
+If this returns a JSON response with `webSocketDebuggerUrl`, CDP is ready.
 
-# macOS
+### Start Chrome with CDP
+
+**macOS:**
+```bash
 /Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome \
   --remote-debugging-port=9222 \
   --user-data-dir="$HOME/.chrome-cdp-profile"
 ```
 
+**Linux:**
+```bash
+google-chrome --remote-debugging-port=9222 \
+  --user-data-dir="$HOME/.chrome-cdp-profile"
+```
+
+**Headless (no GUI, for CI/servers):**
+```bash
+google-chrome --headless --remote-debugging-port=9222 \
+  --user-data-dir="$HOME/.chrome-cdp-profile"
+```
+
+The `--user-data-dir` flag creates a separate Chrome profile so CDP sessions don't interfere with your daily browser.
+
+### MCP Server Configuration
+
+Add to your `~/.mcp.json` (or project `.mcp.json`):
+
+```json
+{
+  "mcpServers": {
+    "chrome-devtools": {
+      "command": "npx",
+      "args": ["@anthropic-ai/chrome-devtools-mcp@latest", "--port=9222"]
+    }
+  }
+}
+```
+
 ### Port Auto-Detection
 
-If port 9222 isn't responding, common alternatives: `9222`, `9223`, `18800`. Check which port Chrome is actually using:
+If port 9222 isn't responding, find which port Chrome is actually using:
 
 ```bash
+# macOS / Linux
 lsof -iTCP -sTCP:LISTEN | grep -i chrome
 ```
 
 ### Proxy Conflicts
 
-If you're running a local proxy (Clash, Stash, etc.), `curl localhost` may route through the proxy and fail. Fix:
+If you're running a local proxy (Clash, Stash, Surge, etc.), `curl localhost` may route through the proxy and fail:
 
 ```bash
+# Fix: bypass proxy for localhost
 NO_PROXY=localhost,127.0.0.1 curl -s http://127.0.0.1:9222/json
 ```
 
-For Python websocket connections:
-```python
-import os
-for k in list(os.environ):
-    if 'proxy' in k.lower(): del os.environ[k]
-os.environ['NO_PROXY'] = '*'
+If the MCP server itself is affected, set `NO_PROXY` in your shell profile:
+
+```bash
+# Add to ~/.zshrc or ~/.bashrc
+export NO_PROXY="localhost,127.0.0.1"
 ```
 
 ---
@@ -209,9 +308,14 @@ os.environ['NO_PROXY'] = '*'
 
 | Problem | Cause | Fix |
 |---------|-------|-----|
-| MCP calls hang | CDP port wrong | Check `lsof` for actual port |
-| `curl localhost:9222` hangs | Proxy intercepting | Add `NO_PROXY=localhost` |
-| UIDs don't match | Page changed since snapshot | Take fresh snapshot |
+| MCP calls hang | CDP port wrong | `lsof -iTCP -sTCP:LISTEN \| grep chrome` to find actual port |
+| `curl localhost:9222` hangs | Proxy intercepting localhost | `NO_PROXY=localhost,127.0.0.1 curl ...` |
+| "Connection refused" on 9222 | Chrome not started with `--remote-debugging-port` | Restart Chrome with the flag (see Setup) |
+| UIDs don't match | Page changed since snapshot | Take fresh snapshot before interacting |
 | Screenshot is blank/tiny | Page not loaded yet | Add `wait_for` before screenshot |
-| Click does nothing | Wrong UID or element hidden | Snapshot → verify element is visible |
-| `navigate_page` overwrites user's tab | Used navigate instead of new_page | Always `new_page` first |
+| Click does nothing | Wrong UID or element not visible | Take snapshot → verify element exists and is visible |
+| `navigate_page` overwrites user tab | Used navigate instead of new_page | Always `new_page` first |
+| "No pages found" | Chrome has no open tabs | Open at least one tab in Chrome |
+| Snapshot returns empty tree | Page is a PDF or non-HTML content | Use `take_screenshot` instead, or `evaluate_script` |
+| `fill` doesn't work on dropdown | Element is a custom `<div>`, not `<select>` | Use `click` to open, then `click` to select option |
+| Lighthouse audit times out | Page is very slow or requires auth | Navigate and log in first, then run audit with `mode="snapshot"` |

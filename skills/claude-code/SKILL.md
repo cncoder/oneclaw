@@ -22,13 +22,13 @@ Pick the right mode before starting:
 |----------|------|------|
 | Multi-file changes, need visibility | **Interactive** | Default choice |
 | Single file, <2 min, predictable output | **Background one-shot** | Quick tasks |
-| Self-iterating feature development | **loop** | Large autonomous tasks |
+| Self-iterating feature development | **`/loop`** | Large autonomous tasks |
 
-**Classify the task first** (from Anthropic internal practices):
+**Classify the task first:**
 
 | Type | Examples | Strategy |
 |------|----------|----------|
-| **Peripheral / async** | Prototypes, test generation, refactoring, unfamiliar codebase | loop or auto-accept, let it run |
+| **Peripheral / async** | Prototypes, test generation, refactoring, unfamiliar codebase | `/loop` or auto-accept, let it run |
 | **Core / sync** | Core business logic, security changes, config, multi-component coordination | Interactive mode, supervise in real-time |
 
 ---
@@ -70,7 +70,9 @@ tmux attach -t cc-my-feature   # Ctrl+B, D to detach
 tmux ls                         # List all sessions
 ```
 
-**❌ Never launch CC with raw `tmux new-session`** — always use `cc-start.sh` so the active session tracker stays in sync.
+**Why `--bare`?** It skips loading MCP servers and CLAUDE.md, cutting startup from ~5s to <1s. Disable it (`--no-bare`) when the task needs MCP tools, project-specific instructions, or custom hooks.
+
+**Never launch CC with raw `tmux new-session`** — always use `cc-start.sh` so the active session tracker stays in sync.
 
 ### Sending Messages
 
@@ -95,6 +97,8 @@ MSG
 2. `/tmp/cc-active-tab` → most recently launched (with validation)
 3. Last `cc-*` session found → fallback
 
+**Why `load-buffer` instead of `send-keys -l`?** `send-keys -l` breaks on quotes, `$`, backslashes, and text longer than ~500 chars. `load-buffer` writes to a temp file and pastes it, bypassing all terminal escaping issues.
+
 ### Reading Output
 
 ```bash
@@ -103,6 +107,24 @@ scripts/cc-read.sh --session cc-auth     # Specific session
 scripts/cc-read.sh --lines 100           # Last 100 lines
 scripts/cc-read.sh --full                # Full scrollback
 scripts/cc-read.sh --status              # Just the status (idle/working/error)
+```
+
+### Stopping a Session
+
+```bash
+# Graceful: send /exit to CC (saves context for --resume)
+scripts/cc-send.sh "/exit"
+
+# Force: kill the tmux session
+tmux kill-session -t cc-my-feature
+```
+
+### Resuming a Session
+
+```bash
+# Resume the most recent CC conversation in a new tmux session
+scripts/cc-start.sh my-feature
+scripts/cc-send.sh "--resume"
 ```
 
 ### Detecting CC State
@@ -121,7 +143,7 @@ scripts/cc-read.sh --status              # Just the status (idle/working/error)
 
 The key to getting good results from Claude Code: **break work into verifiable steps**.
 
-### Splitting Principles (from Anthropic reports)
+### Splitting Principles
 
 - Split by **dependency + verification points**
 - Each sub-task has a **clear completion signal**
@@ -173,13 +195,26 @@ Step 5: Polish — "Review and fix remaining issues"
 
 ## Slot Machine Protocol
 
-From Anthropic's Data Science team:
-
 > `git commit` → let Claude run → success: merge, failure: `git reset --hard`, start over.
 >
 > **Starting fresh beats trying to fix a derailed intermediate state.**
 
 This works because Claude Code is stochastic — the same prompt can produce very different results. A fresh attempt often succeeds where debugging a bad attempt would take longer.
+
+### Practical Example
+
+```bash
+# 1. Checkpoint before risky work
+git add -A && git commit -m "checkpoint: before auth refactor"
+
+# 2. Let CC work
+scripts/cc-send.sh "Refactor the auth module to use JWT tokens"
+
+# 3. If result is bad after 10+ minutes
+git reset --hard HEAD
+# Revise the prompt and try again
+scripts/cc-send.sh "Refactor auth to JWT. Keep the existing session interface, only change the backend."
+```
 
 ---
 
@@ -188,27 +223,35 @@ This works because Claude Code is stochastic — the same prompt can produce ver
 For simple, predictable single tasks:
 
 ```bash
-# Note: unset CLAUDECODE inside OpenClaw to avoid nesting error
+# Run a self-contained task with no interaction
+claude -p "Add type hints to all functions in src/utils.py"
+
+# Inside OpenClaw agent context, unset CLAUDECODE to avoid nesting error
 unset CLAUDECODE && claude --dangerously-skip-permissions -p "describe the task"
 ```
 
-- No mid-course correction possible
-- Only for < 2 minute, well-defined tasks
-- Must `unset CLAUDECODE` in OpenClaw agent context
+When to use:
+- Task is < 2 minutes
+- Output is predictable (formatting, type hints, simple generation)
+- No mid-course correction needed
+
+When NOT to use:
+- Multi-file changes
+- Tasks requiring exploration or iteration
+- Anything that might need human judgment mid-way
 
 ---
 
-## loop Mode (Large Autonomous Tasks)
+## `/loop` Mode (Large Autonomous Tasks)
 
-**Always checkpoint before launching** (Slot Machine):
+The `/loop` command tells Claude Code to iterate autonomously until a condition is met. **Always checkpoint before launching** (Slot Machine):
 
 ```bash
 # 1. Checkpoint
 git add -A && git commit -m "checkpoint: before loop"
 
-# 2. Launch
-/loop "Build X. Output <promise>DONE</promise> when tests pass." \
-  --completion-promise "DONE" --max-iterations 15
+# 2. Launch loop inside a CC session
+scripts/cc-send.sh '/loop "Build the REST API for users CRUD. Run tests after each endpoint. Output DONE when all tests pass." --max-iterations 15'
 ```
 
 - Success → merge
@@ -219,7 +262,7 @@ git add -A && git commit -m "checkpoint: before loop"
 
 ## CLAUDE.md: Teaching CC Your Conventions
 
-Every time CC makes a repeated mistake, add a rule to your project's `CLAUDE.md`. This is reinforcement learning in practice (from Anthropic RL team):
+Every time CC makes a repeated mistake, add a rule to your project's `CLAUDE.md`. Over time it becomes a living rulebook that prevents recurring errors.
 
 ```markdown
 # Tool conventions
@@ -230,13 +273,19 @@ Every time CC makes a repeated mistake, add a rule to your project's `CLAUDE.md`
 - Long text: use heredoc or write to file, not single-line commands
 ```
 
-Over time, CLAUDE.md becomes a living rulebook that prevents recurring mistakes.
+### CLAUDE.md Hierarchy
+
+Claude Code loads `CLAUDE.md` files from multiple locations (highest priority last):
+
+1. **`~/.claude/CLAUDE.md`** — Global defaults (your personal conventions)
+2. **`<project-root>/CLAUDE.md`** — Project-level rules (shared with team via git)
+3. **`<project-root>/<subdir>/CLAUDE.md`** — Directory-specific overrides
+
+Use project-level for team standards. Use global for personal preferences.
 
 ---
 
 ## Two-Phase Workflow (Complex Tasks)
-
-From Anthropic Legal + Growth Marketing teams:
 
 **Phase 1 — Plan** (in conversation):
 ```markdown
@@ -267,9 +316,9 @@ CC_PROC=$(pgrep -f "claude --danger" | head -1)
 if [ -z "$CC_SESSIONS" ] && [ -z "$CC_PROC" ]; then
     echo "CC not running"
 elif [ -z "$CC_SESSIONS" ] && [ -n "$CC_PROC" ]; then
-    echo "⚠️ CC process alive but tmux session lost — may need restart"
+    echo "WARNING: CC process alive but tmux session lost — may need restart"
 elif [ -n "$CC_SESSIONS" ] && [ -z "$CC_PROC" ]; then
-    echo "⚠️ tmux session exists but CC process exited"
+    echo "WARNING: tmux session exists but CC process exited"
 fi
 ```
 
@@ -277,14 +326,16 @@ fi
 
 ## Anti-Patterns
 
-- ❌ Dump 500-word requirement doc in one message (split into steps)
-- ❌ Write code yourself instead of delegating to CC
-- ❌ Run multiple CC instances on the same repo
-- ❌ Use background one-shot for complex tasks
-- ❌ Say "done" without verifying
-- ❌ Try to fix CC's derailed intermediate state (reset and restart)
-- ❌ Wait until CC finishes to evaluate (interrupt early if going wrong)
-- ❌ Manual `/clear` (let auto-compact handle context management)
-- ❌ Use raw `tmux new-session` (always use cc-start.sh)
-- ❌ Send next message before confirming previous was received
-- ❌ Let CC read >10K char files in one go (split reads to avoid context overflow)
+| Don't | Do instead |
+|-------|-----------|
+| Dump a 500-word requirement in one message | Split into progressive steps |
+| Write code yourself, then ask CC to "fix it" | Delegate the full task to CC |
+| Run multiple CC on the same repo | One instance per repo to avoid conflicts |
+| Use background one-shot for complex tasks | Use interactive or `/loop` |
+| Say "done" without verifying | Run tests, check screenshots, sample output |
+| Try to fix CC's derailed intermediate state | `git reset --hard` and start over (Slot Machine) |
+| Wait until CC finishes to evaluate | Interrupt early if going wrong |
+| Manual `/clear` during compaction | Let auto-compact handle context management |
+| Use raw `tmux new-session` | Always use `cc-start.sh` |
+| Send next message before confirming delivery | Check with `cc-read.sh --status` first |
+| Let CC read >10K char files at once | Split reads to avoid context overflow |
