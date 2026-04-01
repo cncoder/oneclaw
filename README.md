@@ -178,14 +178,46 @@ Just run `setup.sh` again — already-installed components will be skipped.
 
 ## OpenClaw Skills (Recommended)
 
-The `skills/` directory contains pre-built Skills that enhance OpenClaw + Claude Code:
+The `skills/` directory contains pre-built Skills that enhance OpenClaw + Claude Code, organized by capability type:
 
-| Skill | Description |
-|-------|-------------|
-| `claude-code` | Dispatch Claude Code via tmux: task splitting, progressive delivery, Slot Machine recovery, `/loop` mode, session monitoring |
-| `chrome-devtools` | Browser automation via CDP: UI interaction, screenshots, data scraping, form filling, performance auditing, device emulation |
-| `aws-infra` | AWS infrastructure queries, auditing, and monitoring via AWS CLI — read-only by default, write actions require confirmation |
-| `skill-vetting` | Security review for vetting third-party Skills from ClawHub before installation |
+### Agent Orchestration
+
+| Skill | Type | Description |
+|-------|------|-------------|
+| [`claude-code`](skills/claude-code/) | Agent Runtime | Dispatch Claude Code via tmux: task splitting, progressive delivery, Slot Machine recovery, `/loop` mode, session monitoring |
+| [`subagents`](skills/subagents/) | Business Process Automation | Specialized sub-agents for research, architecture, code review, QA, data analysis, cost optimization, and documentation |
+
+### Development Tools
+
+| Skill | Type | Description |
+|-------|------|-------------|
+| [`chrome-devtools`](skills/chrome-devtools/) | UI Automation | Browser automation via CDP: interaction, screenshots, scraping, form filling, performance auditing, device emulation |
+| [`skill-creator`](skills/skill-creator/) | Code Scaffolding | Guide for creating Claude Code skills: file structure, description writing, tips, eval methods |
+
+### Research & Analysis
+
+| Skill | Type | Description |
+|-------|------|-------------|
+| [`deep-research`](skills/deep-research/) | Runbook | Structured research methodology: multi-source search, freshness filtering, cross-validation, 5-dimension quality scoring |
+
+### Infrastructure & Operations
+
+| Skill | Type | Description |
+|-------|------|-------------|
+| [`aws-infra`](skills/aws-infra/) | Cloud Operations | AWS infrastructure queries, auditing, and monitoring via CLI — read-only by default, write actions require confirmation |
+| [`config-sync`](skills/config-sync/) | Configuration Audit | CLAUDE.md contradiction detection, stale reference checks, redundancy analysis, audit report generation |
+
+### Security
+
+| Skill | Type | Description |
+|-------|------|-------------|
+| [`skill-vetting`](skills/skill-vetting/) | Security Review | Vet third-party Skills for security risks and prompt injection before installation |
+
+### Visualization
+
+| Skill | Type | Description |
+|-------|------|-------------|
+| [`architecture-svg`](skills/architecture-svg/) | Diagramming | Generate professional dark-theme SVG architecture diagrams optimized for GitHub README |
 
 ### Installation
 
@@ -193,10 +225,7 @@ Install manually:
 
 ```bash
 git clone --depth 1 https://github.com/cncoder/oneclaw.git /tmp/oneclaw
-cp -r /tmp/oneclaw/skills/claude-code ~/.openclaw/workspace/skills/
-cp -r /tmp/oneclaw/skills/chrome-devtools ~/.openclaw/workspace/skills/
-cp -r /tmp/oneclaw/skills/aws-infra ~/.openclaw/workspace/skills/
-cp -r /tmp/oneclaw/skills/skill-vetting ~/.openclaw/workspace/skills/
+cp -r /tmp/oneclaw/skills/* ~/.openclaw/workspace/skills/
 rm -rf /tmp/oneclaw
 ```
 
@@ -209,8 +238,7 @@ claude
 Then type:
 
 ```
-Install the skills (claude-code, chrome-devtools, aws-infra, skill-vetting) from
-https://github.com/cncoder/oneclaw into OpenClaw.
+Install all skills from https://github.com/cncoder/oneclaw into OpenClaw.
 Copy each skill directory to ~/.openclaw/workspace/skills/.
 ```
 
