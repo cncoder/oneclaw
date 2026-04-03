@@ -663,18 +663,19 @@ def _merge_chunks_advanced(
 
     stereo = stereo[:pos + crossfade_samples]
 
-    # Pink noise floor
-    pink_amplitude = 10 ** (cfg.pink_noise_db / 20)
-    white = np.random.randn(len(stereo), 2).astype("float32")
-    kernel_size = 16
-    kernel = np.ones(kernel_size, dtype="float32") / kernel_size
-    pink = np.zeros_like(white)
-    for ch in range(2):
-        pink[:, ch] = np.convolve(white[:, ch], kernel, mode="same")
-    pink_max = np.abs(pink).max()
-    if pink_max > 0:
-        pink = pink / pink_max * pink_amplitude
-    stereo += pink
+    # Pink noise floor (disabled when pink_noise_db is None)
+    if cfg.pink_noise_db is not None:
+        pink_amplitude = 10 ** (cfg.pink_noise_db / 20)
+        white = np.random.randn(len(stereo), 2).astype("float32")
+        kernel_size = 16
+        kernel = np.ones(kernel_size, dtype="float32") / kernel_size
+        pink = np.zeros_like(white)
+        for ch in range(2):
+            pink[:, ch] = np.convolve(white[:, ch], kernel, mode="same")
+        pink_max = np.abs(pink).max()
+        if pink_max > 0:
+            pink = pink / pink_max * pink_amplitude
+        stereo += pink
 
     stereo = np.clip(stereo, -1.0, 1.0)
 
@@ -692,7 +693,7 @@ def _merge_chunks_advanced(
     sf.write(str(output_wav), stereo, sr)
     dur = len(stereo) / sr
     print(f"  [Merge] Advanced merge done: {len(merged_parts)} parts -> {dur:.0f}s stereo, "
-          f"crossfade={cfg.crossfade_ms}ms, pink={cfg.pink_noise_db}dB")
+          f"crossfade={cfg.crossfade_ms}ms, pink={'off' if cfg.pink_noise_db is None else f'{cfg.pink_noise_db}dB'}")
 
 
 # ── Main Entry ───────────────────────────────────────────────────────────

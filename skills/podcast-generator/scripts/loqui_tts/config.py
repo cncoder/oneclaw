@@ -48,5 +48,5 @@ class TTSConfig:
     cache_dir: Path | None = None
     max_retries: int = 2
     crossfade_ms: int = 200
-    pink_noise_db: float = -40
+    pink_noise_db: float | None = None
     mp3_bitrate: str = "192k"
