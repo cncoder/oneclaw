@@ -766,6 +766,63 @@ cat > "$HOME/.mcp.json" <<MCP_EOF
 MCP_EOF
 success "MCP servers config written to ~/.mcp.json"
 
+# --- Generate ~/.claude/CLAUDE.md (global instructions for Claude Code) ---
+if [ ! -f "$CLAUDE_DIR/CLAUDE.md" ]; then
+    cat > "$CLAUDE_DIR/CLAUDE.md" <<'GLOBALMD_EOF'
+# Claude Code 全局配置
+
+## 语言
+
+默认使用中文回复。技术术语保持英文原文。
+
+## 编码规范
+
+- 写代码前先读已有代码，理解上下文再动手
+- 修改文件前必须先 Read，不要凭印象修改
+- 函数保持短小（<50 行），文件不超过 800 行
+- 优先不可变数据，避免就地修改对象
+- 只在系统边界做输入验证（用户输入、外部 API），内部代码信任传参
+- 不要添加没被要求的功能、注释、类型标注或重构
+
+## 安全
+
+- 绝不在代码中硬编码密钥、Token、密码
+- 使用环境变量或密钥管理器
+- SQL 必须用参数化查询
+- 用户输入必须做 XSS 防护
+
+## 工具使用
+
+- 用 Read 读文件，不用 cat/head/tail
+- 用 Edit 改文件，不用 sed/awk
+- 用 Grep 搜索内容，不用 grep/rg
+- 用 Glob 找文件，不用 find/ls
+- 大输出加 `| head -100` 限制
+
+## 调试
+
+- 先读完整错误信息和堆栈
+- 先复现问题，再提修复方案
+- 一次只改一个变量验证假设
+- 连续失败 3 次停下来重新分析
+
+## Git
+
+- Commit message 格式：`<type>: <description>`（feat/fix/refactor/docs/test/chore）
+- 不要自动 commit，除非明确要求
+- 不要 force push、reset --hard、跳过 hooks
+
+## 可用工具
+
+- **Chrome DevTools MCP**: 浏览器调试（端口 9222）
+- **AWS Documentation MCP**: 查询 AWS 官方文档
+- **Context7 Plugin**: 查询编程库/SDK 最新文档
+GLOBALMD_EOF
+    success "Claude Code CLAUDE.md 已生成 (~/.claude/CLAUDE.md)"
+else
+    success "Claude Code CLAUDE.md 已存在，跳过"
+fi
+
 echo ""
 echo -e "${GREEN}${BOLD}Claude Code 已配置完成，可以随时使用！${NC}"
 echo -e "如果后续步骤遇到问题，打开新终端窗口输入 ${CYAN}claude${NC} 让它帮你排查。"
