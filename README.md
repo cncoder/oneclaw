@@ -1,6 +1,6 @@
 # OneClaw
 
-One-click setup for **Claude Code + OpenClaw + AWS** on Mac Apple Silicon.
+One-click setup for **Claude Code + OpenClaw + AWS** on macOS.
 
 Zero technical knowledge required — open Terminal, paste one command, enter your AWS keys, done.
 
@@ -23,9 +23,7 @@ bash setup.sh
 
 ## System Requirements
 
-- **macOS 13 (Ventura)** or later
-- **Apple Silicon** (M1 / M2 / M3 / M4) — Intel Macs are not supported
-- **16 GB RAM** recommended (8 GB minimum)
+- **macOS 12 (Monterey)** or later (Apple Silicon and Intel both supported)
 - **~5 GB free disk space** (Node.js, Chrome, OpenClaw, etc.)
 - Internet connection during installation
 

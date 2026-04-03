@@ -1,6 +1,6 @@
 # OneClaw
 
-一键安装 Claude Code + OpenClaw + AWS 全家桶，专为 Mac Apple Silicon 设计。
+一键安装 Claude Code + OpenClaw + AWS 全家桶，适用于 macOS。
 
 **完全不懂技术的小白也能用** — 打开终端，粘贴一行命令，按提示输入 AWS 密钥即可。
 
@@ -23,9 +23,7 @@ bash setup.sh
 
 ## 系统要求
 
-- **macOS 13 (Ventura)** 或更高版本
-- **Apple Silicon**（M1 / M2 / M3 / M4）— 不支持 Intel Mac
-- **16 GB 内存**（推荐，最低 8 GB）
+- **macOS 12 (Monterey)** 或更高版本（Apple Silicon 和 Intel 均支持）
 - **约 5 GB 可用磁盘空间**（Node.js、Chrome、OpenClaw 等）
 - 安装过程需要联网
 

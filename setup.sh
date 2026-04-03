@@ -1,6 +1,6 @@
 #!/bin/bash
 # ============================================================================
-# OnClick-Claw: One-Click Setup for Claude Code + OpenClaw on Mac (Apple Silicon)
+# OnClick-Claw: One-Click Setup for Claude Code + OpenClaw on Mac
 # ============================================================================
 # Usage: curl -fsSL https://raw.githubusercontent.com/cncoder/oneclaw/main/setup.sh | bash
 #   or:  bash setup.sh
@@ -15,7 +15,7 @@
 #   7. Set up Guardian watchdog + LaunchAgents (auto-start on boot)
 #   8. Generate a CLAUDE.md for OpenClaw initialization
 #
-# Requirements: macOS with Apple Silicon (M1/M2/M3/M4), internet connection
+# Requirements: macOS, internet connection
 # ============================================================================
 
 set -euo pipefail
@@ -97,13 +97,82 @@ check_command() {
     command -v "$1" >/dev/null 2>&1
 }
 
+# Validate AWS Access Key ID format (AKIA/ASIA prefix, 20 chars, alphanumeric)
+validate_aws_ak() {
+    local ak="$1"
+    if [[ ! "$ak" =~ ^(AKIA|ASIA)[A-Z0-9]{16}$ ]]; then
+        return 1
+    fi
+    return 0
+}
+
+# Validate AWS Secret Access Key format (40 chars, Base64 charset: A-Za-z0-9+/)
+validate_aws_sk() {
+    local sk="$1"
+    if [[ ${#sk} -ne 40 ]]; then
+        return 1
+    fi
+    if [[ ! "$sk" =~ ^[A-Za-z0-9+/]{40}$ ]]; then
+        return 1
+    fi
+    return 0
+}
+
+# Ask for AWS Access Key ID with format validation
+ask_aws_ak() {
+    local var_name="$1"
+    local value=""
+    while true; do
+        echo -en "${YELLOW}请输入 AWS Access Key ID: ${NC}"
+        read -r value </dev/tty
+        if [ -z "$value" ]; then
+            warn "必填项，请输入内容。"
+            continue
+        fi
+        if ! validate_aws_ak "$value"; then
+            warn "格式不正确。AWS Access Key ID 应以 AKIA 或 ASIA 开头，共 20 个大写字母和数字。"
+            echo -e "  示例: ${GREEN}AKIAIOSFODNN7EXAMPLE${NC}"
+            echo -en "${YELLOW}重新输入？(Y/n): ${NC}"
+            read -r retry </dev/tty
+            [[ "$retry" =~ ^[Nn]$ ]] && break  # User insists, accept as-is
+            continue
+        fi
+        break
+    done
+    printf -v "$var_name" '%s' "$value"
+}
+
+# Ask for AWS Secret Access Key with format validation
+ask_aws_sk() {
+    local var_name="$1"
+    local value=""
+    while true; do
+        echo -en "${YELLOW}请输入 AWS Secret Access Key（输入时不会显示）: ${NC}"
+        read -rs value </dev/tty
+        echo ""
+        if [ -z "$value" ]; then
+            warn "必填项，请输入内容。"
+            continue
+        fi
+        if ! validate_aws_sk "$value"; then
+            warn "格式不正确。AWS Secret Access Key 应为 40 个字符（A-Z、a-z、0-9、+、/）。你输入了 ${#value} 个字符。"
+            echo -en "${YELLOW}重新输入？(Y/n): ${NC}"
+            read -r retry </dev/tty
+            [[ "$retry" =~ ^[Nn]$ ]] && break  # User insists, accept as-is
+            continue
+        fi
+        break
+    done
+    printf -v "$var_name" '%s' "$value"
+}
+
 # ============================================================================
 # Pre-flight checks
 # ============================================================================
 echo -e "\n${CYAN}${BOLD}"
 echo "  ╔══════════════════════════════════════════════════╗"
 echo "  ║       OnClick-Claw: One-Click Setup Script       ║"
-echo "  ║   Claude Code + OpenClaw + AWS on Mac Silicon    ║"
+echo "  ║     Claude Code + OpenClaw + AWS on macOS         ║"
 echo "  ╚══════════════════════════════════════════════════╝"
 echo -e "${NC}"
 
@@ -158,10 +227,6 @@ fi
 # ============================================================================
 step 1 "Install Claude Code"
 
-echo -e "${BOLD}Claude Code 是 AI 编程助手，无额外依赖，优先安装。${NC}"
-echo -e "后续步骤如果遇到问题，你可以随时${BOLD}打开新终端${NC}输入 ${GREEN}claude${NC} 让它帮你修复。\n"
-echo -e "${YELLOW}注意：安装完成后如果提示找不到 claude 命令，请关闭终端重新打开再试。${NC}\n"
-
 # Claude Code install puts binary in ~/.claude/local/bin/ and updates ~/.zshrc
 # We need to check multiple possible locations
 CLAUDE_SEARCH_PATHS=(
@@ -181,12 +246,95 @@ find_claude() {
     return 1
 }
 
+# Helper: ensure a PATH dir is in ~/.zshrc so new terminals can find claude
+ensure_path_in_zshrc() {
+    local dir="$1"
+    local zshrc="$HOME/.zshrc"
+    touch "$zshrc"
+    # Check if this exact export already exists
+    if ! grep -qF "export PATH=\"$dir:\$PATH\"" "$zshrc" 2>/dev/null && \
+       ! grep -qF "export PATH=\"$dir:" "$zshrc" 2>/dev/null && \
+       ! grep -qF "PATH=\"$dir:" "$zshrc" 2>/dev/null; then
+        echo "" >> "$zshrc"
+        echo "# Claude Code" >> "$zshrc"
+        echo "export PATH=\"$dir:\$PATH\"" >> "$zshrc"
+        info "已将 ${dir} 写入 ~/.zshrc（新终端窗口自动生效）"
+    fi
+}
+
 if check_command claude; then
     success "Claude Code already installed: $(claude --version 2>/dev/null || echo 'installed')"
 elif CLAUDE_BIN_DIR=$(find_claude); then
     export PATH="$CLAUDE_BIN_DIR:$PATH"
+    ensure_path_in_zshrc "$CLAUDE_BIN_DIR"
     success "Claude Code already installed (found in $CLAUDE_BIN_DIR): $(claude --version 2>/dev/null || echo 'installed')"
 else
+    echo -e "${BOLD}Claude Code 是 AI 编程助手，无额外依赖，优先安装。${NC}"
+    echo -e "后续步骤如果遇到问题，你可以随时${BOLD}打开新终端${NC}输入 ${GREEN}claude${NC} 让它帮你修复。\n"
+
+    # Pre-flight: check if claude.ai is accessible from this region
+    info "检测 claude.ai 网络可达性..."
+    CLAUDE_PREFLIGHT=$(curl -fsSL -o /dev/null -w "%{http_code}" -m 10 "https://claude.ai/install.sh" 2>/dev/null || echo "000")
+    if [ "$CLAUDE_PREFLIGHT" != "200" ]; then
+        # Double-check: fetch a small chunk and look for region block signature
+        CLAUDE_BODY=$(curl -fsSL -m 10 "https://claude.ai/install.sh" 2>/dev/null | head -c 2000 || true)
+        if echo "$CLAUDE_BODY" | grep -qi "unavailable in region\|unavailable here\|isn.*t available"; then
+            echo ""
+            echo -e "${RED}${BOLD}Claude.ai 在当前网络环境下不可用（IP 属地受限）。${NC}"
+            echo ""
+            echo -e "  检测到 claude.ai 返回 ${YELLOW}\"App unavailable in region\"${NC}，"
+            echo -e "  说明你的网络出口 IP 不在 Claude 服务的可用区域内。"
+            echo ""
+            echo -e "  ${BOLD}解决方法：${NC}"
+            echo -e "  配置终端代理，确保出口 IP 在支持的区域（如美国、日本等），然后重新运行本脚本。"
+            echo ""
+
+            # Auto-detect local proxy: scan localhost LISTEN ports, test which can reach Google
+            PROXY_FOUND=false
+            SUGGESTED_PORT=""
+            info "正在探测本地代理端口（可能需要几秒）..."
+
+            # Collect unique localhost LISTEN ports (skip well-known non-proxy: 22,53,80,443,3000,3306,5432,8443,9222,18789...)
+            LOCAL_PORTS=$(lsof -i -sTCP:LISTEN -P -n 2>/dev/null \
+                | awk '$5=="IPv4" || $5=="IPv6" {print $9}' \
+                | grep -E '127\.0\.0\.1:|localhost:|\*:' \
+                | grep -oE '[0-9]+$' \
+                | sort -un \
+                | grep -vE '^(22|53|80|443|3000|3306|5432|5900|8443|9222|18789)$' \
+                || true)
+
+            for port in $LOCAL_PORTS; do
+                # Try using this port as HTTP proxy to reach Google (2s timeout)
+                if curl -s -o /dev/null -m 2 -w "%{http_code}" --proxy "http://127.0.0.1:${port}" "https://www.google.com" 2>/dev/null | grep -qE "^(200|301|302)"; then
+                    PROXY_FOUND=true
+                    SUGGESTED_PORT="$port"
+                    success "发现可用代理端口: ${port}"
+                    break
+                fi
+            done
+
+            if [ "$PROXY_FOUND" = true ]; then
+                echo ""
+                echo -e "  ${BOLD}在终端执行以下命令设置代理，然后重新运行本脚本：${NC}"
+                echo ""
+                echo -e "    ${CYAN}export http_proxy=http://127.0.0.1:${SUGGESTED_PORT}${NC}"
+                echo -e "    ${CYAN}export https_proxy=http://127.0.0.1:${SUGGESTED_PORT}${NC}"
+            else
+                echo -e "  ${YELLOW}未检测到可用的本地代理。请先打开代理软件，然后执行：${NC}"
+                echo ""
+                echo -e "    ${CYAN}export http_proxy=http://127.0.0.1:<代理端口>${NC}"
+                echo -e "    ${CYAN}export https_proxy=http://127.0.0.1:<代理端口>${NC}"
+            fi
+
+            echo ""
+            echo -e "  ${YELLOW}提示：可以先用浏览器打开 ${CYAN}https://claude.ai${YELLOW} 测试是否能正常访问。${NC}"
+            echo ""
+            exit 1
+        fi
+        # Not a region block, might be a transient network issue
+        warn "claude.ai 返回 HTTP ${CLAUDE_PREFLIGHT}，可能是临时网络问题，尝试继续安装..."
+    fi
+
     info "Installing Claude Code..."
     if curl -fsSL https://claude.ai/install.sh | bash; then
         # Reload PATH: source shell profile to pick up changes made by `claude install`
@@ -219,6 +367,143 @@ else
         exit 1
     fi
 fi
+
+# --- Gate: Claude Code MUST be working before proceeding ---
+if ! claude --version >/dev/null 2>&1; then
+    echo ""
+    echo -e "${RED}${BOLD}Claude Code 未能正常运行，安装无法继续。${NC}"
+    echo ""
+    echo -e "  Claude Code 是整个系统的基础，后续所有组件都依赖它。"
+    echo -e "  请先确保 Claude Code 安装成功后再重新运行本脚本。"
+    echo ""
+    echo -e "  ${BOLD}排查步骤：${NC}"
+    echo -e "  1. 关闭当前终端，打开新终端"
+    echo -e "  2. 输入 ${GREEN}claude --version${NC} 检查是否能正常输出版本号"
+    echo -e "  3. 如果提示找不到命令，手动运行："
+    echo -e "     ${CYAN}curl -fsSL https://claude.ai/install.sh | bash${NC}"
+    echo -e "  4. 安装成功后，关闭终端重新打开，再运行本脚本"
+    echo ""
+    exit 1
+fi
+CLAUDE_VERSION=$(claude --version 2>/dev/null || echo "unknown")
+success "Claude Code 已就绪: ${CLAUDE_VERSION}"
+
+# --- Immediately create rescue scripts (only depends on Claude Code) ---
+info "创建快捷脚本到 ~/Documents/OneClaw/ ..."
+mkdir -p "$HOME/Documents/OneClaw"
+
+# open-claude.command — one-click open Claude Code interactive mode
+cat > "$HOME/Documents/OneClaw/open-claude.command" <<'ASKCLAUDE_EOF'
+#!/bin/bash
+# open-claude.command — Open Claude Code in interactive mode
+# Double-click this file to start chatting with Claude in Chinese.
+
+export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$HOME/Library/pnpm:/usr/local/bin:$PATH"
+eval "$(fnm env 2>/dev/null)" || true
+
+if ! command -v claude >/dev/null 2>&1; then
+    echo "Claude Code not found. Please run: source ~/.zshrc"
+    exit 1
+fi
+
+echo ""
+echo "  正在启动 Claude Code..."
+echo "  用中文描述你的问题，例如："
+echo "    「帮我检查 AWS 凭证是否正确」"
+echo "    「OpenClaw 报错了，帮我看看日志」"
+echo "    「Chrome 连不上」"
+echo ""
+
+cd ~/.openclaw/workspace 2>/dev/null || cd ~
+claude
+ASKCLAUDE_EOF
+chmod +x "$HOME/Documents/OneClaw/open-claude.command"
+
+# ai-repair.command — Let Claude Code diagnose and fix OpenClaw automatically
+cat > "$HOME/Documents/OneClaw/ai-repair.command" <<'AIREPAIR_EOF'
+#!/bin/bash
+# ai-repair.command — Let Claude Code diagnose and fix OpenClaw automatically
+# Double-click this file or run: bash ~/Documents/OneClaw/ai-repair.command
+
+set -euo pipefail
+
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+CYAN='\033[0;36m'
+BOLD='\033[1m'
+NC='\033[0m'
+
+export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$HOME/Library/pnpm:/usr/local/bin:$PATH"
+eval "$(fnm env 2>/dev/null)" || true
+
+echo -e "\n${CYAN}${BOLD}=== OpenClaw AI Repair (Claude Code) ===${NC}"
+echo -e "${YELLOW}Claude Code will automatically diagnose and fix OpenClaw issues.${NC}"
+echo -e "This may take 1-3 minutes...\n"
+
+if ! command -v claude >/dev/null 2>&1; then
+    echo -e "${RED}Claude Code not found. Please run: source ~/.zshrc${NC}"
+    exit 1
+fi
+
+REPAIR_PROMPT='You are an OpenClaw repair agent. Diagnose and fix the issue step by step.
+
+## System Layout
+- Config: ~/.openclaw/openclaw.json
+- Logs: ~/.openclaw/logs/ (gateway.log, gateway.err.log, node.log, node.err.log, guardian.log, chrome-stdout.log)
+- LaunchAgents: ~/Library/LaunchAgents/ai.openclaw.{gateway,node,guardian,chrome}.plist
+- Scripts: ~/.openclaw/scripts/
+- AWS creds: ~/.aws/credentials, ~/.aws/config
+- Claude Code: ~/.claude/settings.json, ~/.mcp.json
+
+## Diagnostic Steps (DO ALL OF THESE)
+1. Run `openclaw status` to get current state
+2. Run `openclaw doctor` to check health
+3. Check recent errors: `tail -80 ~/.openclaw/logs/gateway.err.log` and `tail -80 ~/.openclaw/logs/node.err.log`
+4. Check LaunchAgent status: `launchctl list | grep openclaw`
+5. Check if ports are in use: `lsof -i :18789` and `lsof -i :9222`
+6. Verify AWS credentials: `aws sts get-caller-identity`
+
+## Common Issues & Fixes
+- Gateway not starting → check port conflict, check logs, restart LaunchAgent
+- Node not connecting → check gateway is up first, verify token in plist matches openclaw.json
+- Chrome CDP not responding → restart Chrome LaunchAgent, check port 9222
+- AWS auth failure → check ~/.aws/credentials format
+- "already running" errors → kill orphan processes first: `pkill -f "openclaw gateway"; pkill -f "openclaw node"`
+- Permission errors → check file ownership with `ls -la ~/.openclaw/`
+
+## Repair Actions
+After diagnosis, fix the root cause. Then restart services in order:
+1. Stop services (macOS 13+: `launchctl bootout gui/$(id -u)/ai.openclaw.chrome` etc., older: `launchctl unload ~/Library/LaunchAgents/ai.openclaw.*.plist`)
+2. Kill orphans: `pkill -f "openclaw gateway"; pkill -f "openclaw node"`
+3. Start Chrome: `launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/ai.openclaw.chrome.plist` → wait 2s
+4. Start Gateway: `launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/ai.openclaw.gateway.plist` → wait 3s
+5. Start Node: `launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/ai.openclaw.node.plist` → wait 2s
+6. Start Guardian: `launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/ai.openclaw.guardian.plist`
+7. Verify: `curl -s http://127.0.0.1:18789/` should return 200
+
+## Output
+Print a clear summary of what you found and what you fixed. Use Chinese.'
+
+claude --dangerously-skip-permissions -p "$REPAIR_PROMPT" --output-format text 2>&1
+
+echo -e "\n${GREEN}${BOLD}AI repair complete.${NC}"
+echo -e "If issues persist, check: ${CYAN}https://github.com/cncoder/oneclaw/issues${NC}\n"
+AIREPAIR_EOF
+chmod +x "$HOME/Documents/OneClaw/ai-repair.command"
+
+# Chinese symlinks
+ln -sf "open-claude.command" "$HOME/Documents/OneClaw/打开Claude对话.command"
+ln -sf "ai-repair.command" "$HOME/Documents/OneClaw/AI修复.command"
+
+success "快捷脚本已创建: ~/Documents/OneClaw/"
+echo -e "  📁 ${GREEN}open-claude.command${NC}  (打开Claude对话) — 双击打开 Claude Code 交互模式"
+echo -e "  📁 ${GREEN}ai-repair.command${NC}    (AI修复) — 双击让 AI 自动诊断修复"
+echo ""
+echo -e "${GREEN}${BOLD}后续步骤如果遇到任何问题，${NC}可以："
+echo -e "  1. 打开新终端输入 ${GREEN}claude${NC}"
+echo -e "  2. 或双击 ${GREEN}~/Documents/OneClaw/打开Claude对话.command${NC}"
+echo ""
 
 # ============================================================================
 # Step 2: Collect AWS credentials + Configure Claude Code for Bedrock
@@ -266,8 +551,8 @@ if [ "$AWS_CREDS_EXIST" = false ]; then
     echo -e "  ${YELLOW}还需要在 Bedrock 控制台开启模型访问：${NC}"
     echo -e "  AWS Console → Bedrock → Model access → 勾选 Anthropic Claude 全系列 → Save"
     echo ""
-    ask_secret "请输入 AWS Access Key ID" AWS_AK
-    ask_secret "请输入 AWS Secret Access Key（输入时不会显示）" AWS_SK true
+    ask_aws_ak AWS_AK
+    ask_aws_sk AWS_SK
 fi
 
 # Region: read from existing config or ask
@@ -364,7 +649,23 @@ if check_command aws; then
         echo -e "  1. IAM 用户缺少 ${GREEN}bedrock:ListFoundationModels${NC} 权限"
         echo -e "  2. 区域 ${GREEN}${AWS_BEDROCK_REGION}${NC} 未开启 Bedrock 模型访问"
         echo -e "  3. 请在 AWS Console → Bedrock → Model access 中勾选 Anthropic Claude 系列"
-        echo -e "  ${YELLOW}安装将继续，但 Claude Code 可能无法正常使用。请稍后检查权限。${NC}"
+        echo ""
+        echo -en "${YELLOW}是否重新输入 AWS Access Key？(y/N): ${NC}"
+        read -r RETRY_CREDS </dev/tty
+        if [[ "$RETRY_CREDS" =~ ^[Yy]$ ]]; then
+            ask_aws_ak AWS_AK
+            ask_aws_sk AWS_SK
+            aws configure set aws_access_key_id "$AWS_AK" --profile default
+            aws configure set aws_secret_access_key "$AWS_SK" --profile default
+            if aws bedrock list-foundation-models --region "$AWS_BEDROCK_REGION" --query 'modelSummaries[?starts_with(modelId, `anthropic.claude`)].[modelId]' --output text >/dev/null 2>&1; then
+                success "Bedrock 权限验证通过（新凭证）"
+            else
+                warn "新凭证仍无法访问 Bedrock，安装将继续。"
+                echo -e "  ${YELLOW}安装完成后可以打开新终端输入 ${GREEN}claude${YELLOW} 让它帮你排查权限问题。${NC}"
+            fi
+        else
+            echo -e "  ${YELLOW}安装将继续。完成后可以打开新终端输入 ${GREEN}claude${YELLOW} 让它帮你排查。${NC}"
+        fi
     fi
 else
     info "AWS CLI 尚未安装，Bedrock 权限将在后续步骤验证"
@@ -480,25 +781,6 @@ echo -e "如果后续步骤遇到问题，打开新终端窗口输入 ${CYAN}cla
 echo ""
 
 # ============================================================================
-# Step 2.5: Install Homebrew (many tools depend on it)
-# ============================================================================
-if check_command brew; then
-    success "Homebrew already installed: $(brew --version | head -1)"
-else
-    info "Installing Homebrew..."
-    if /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"; then
-        eval "$(/opt/homebrew/bin/brew shellenv)"
-        success "Homebrew installed"
-    else
-        echo -e "${RED}Homebrew 安装失败。${NC}请手动运行:"
-        echo -e "  ${CYAN}/bin/bash -c \"\$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\"${NC}"
-        exit 1
-    fi
-fi
-# Ensure brew is in PATH for this session
-eval "$(/opt/homebrew/bin/brew shellenv)" 2>/dev/null || true
-
-# ============================================================================
 # Step 3: fnm (Fast Node Manager) + Node.js
 # ============================================================================
 step 3 "Install fnm + Node.js"
@@ -540,18 +822,16 @@ fi
 # ============================================================================
 step 4 "Install core dependencies (pnpm, uv, AWS CLI)"
 
-# pnpm (via corepack or npm fallback)
+# pnpm
 if check_command pnpm; then
     success "pnpm already installed: $(pnpm --version)"
 else
     info "Installing pnpm..."
-    if corepack enable 2>/dev/null && corepack prepare pnpm@latest --activate 2>/dev/null; then
-        success "pnpm installed via corepack"
-    elif npm install -g pnpm; then
+    if npm install -g pnpm; then
         pnpm setup 2>/dev/null || true
         export PNPM_HOME="$HOME/Library/pnpm"
         export PATH="$PNPM_HOME:$PATH"
-        success "pnpm installed via npm"
+        success "pnpm installed"
     else
         echo -e "${RED}pnpm 安装失败。${NC}你可以打开新终端输入 ${GREEN}claude${NC} 让它帮你修，或手动运行: ${CYAN}npm install -g pnpm${NC}"
         exit 1
@@ -605,7 +885,25 @@ info "Verifying AWS credentials..."
 if aws sts get-caller-identity >/dev/null 2>&1; then
     success "AWS credentials valid: $(aws sts get-caller-identity --query 'Account' --output text)"
 else
-    warn "AWS credential verification failed. You may need to fix ~/.aws/credentials later."
+    warn "AWS 凭证验证失败。"
+    echo ""
+    echo -en "${YELLOW}是否重新输入 AWS Access Key？(y/N): ${NC}"
+    read -r RETRY_STS </dev/tty
+    if [[ "$RETRY_STS" =~ ^[Yy]$ ]]; then
+        ask_aws_ak AWS_AK
+        ask_aws_sk AWS_SK
+        aws configure set aws_access_key_id "$AWS_AK" --profile default
+        aws configure set aws_secret_access_key "$AWS_SK" --profile default
+        if aws sts get-caller-identity >/dev/null 2>&1; then
+            success "AWS credentials valid (new): $(aws sts get-caller-identity --query 'Account' --output text)"
+        else
+            warn "新凭证仍然无效，安装将继续。"
+            echo -e "  ${YELLOW}安装完成后可以打开新终端输入 ${GREEN}claude${YELLOW} 让它帮你排查。${NC}"
+        fi
+    else
+        warn "跳过，安装将继续。"
+        echo -e "  ${YELLOW}安装完成后可以打开新终端输入 ${GREEN}claude${YELLOW} 让它帮你排查 AWS 凭证问题。${NC}"
+    fi
 fi
 
 # Verify Bedrock endpoint
@@ -616,19 +914,23 @@ case "$AWS_BEDROCK_REGION" in
     ap-*)  BEDROCK_TEST_PREFIX="ap" ;;
 esac
 
-if aws bedrock-runtime invoke-model \
-    --model-id "${BEDROCK_TEST_PREFIX}.anthropic.claude-haiku-4-5-20251001-v1:0" \
-    --region "$AWS_BEDROCK_REGION" \
-    --body '{"anthropic_version":"bedrock-2023-05-31","max_tokens":16,"messages":[{"role":"user","content":"hi"}]}' \
-    --content-type "application/json" \
-    /dev/null >/dev/null 2>&1; then
+verify_bedrock_endpoint() {
+    aws bedrock-runtime invoke-model \
+        --model-id "${BEDROCK_TEST_PREFIX}.anthropic.claude-haiku-4-5-20251001-v1:0" \
+        --region "$AWS_BEDROCK_REGION" \
+        --body '{"anthropic_version":"bedrock-2023-05-31","max_tokens":16,"messages":[{"role":"user","content":"hi"}]}' \
+        --content-type "application/json" \
+        /dev/null >/dev/null 2>&1
+}
+
+if verify_bedrock_endpoint; then
     success "Bedrock endpoint verified in ${AWS_BEDROCK_REGION} (model accessible)"
 else
     warn "Bedrock 权限检测失败（${AWS_BEDROCK_REGION}）"
     echo ""
     echo -e "  ${YELLOW}${BOLD}⚠ 你的 AWS 账号可能缺少 Bedrock 权限，Claude Code 和 OpenClaw 将无法正常工作。${NC}"
     echo ""
-    echo -e "  ${BOLD}请检查以下几项：${NC}"
+    echo -e "  ${BOLD}可能的原因：${NC}"
     echo ""
     echo -e "  ${CYAN}1. IAM 权限不足${NC}"
     echo -e "     → 给你的 IAM 用户附加策略 ${GREEN}AmazonBedrockFullAccess${NC}"
@@ -645,8 +947,32 @@ else
     echo -e "     → 当前区域: ${YELLOW}${AWS_BEDROCK_REGION}${NC}"
     echo -e "     → 推荐使用: ${GREEN}us-west-2${NC}（美西）或 ${GREEN}us-east-1${NC}（美东）"
     echo ""
-    echo -e "  ${GREEN}${BOLD}安装会继续，但请尽快修复权限，否则 Claude Code 和 OpenClaw 无法调用 AI 模型。${NC}"
-    echo -e "  修复后可以打开新终端输入 ${CYAN}claude${NC} 验证是否正常工作。"
+    echo -en "  ${YELLOW}是否重新输入 AWS Access Key 再试？(y/N): ${NC}"
+    read -r RETRY_BEDROCK </dev/tty
+    if [[ "$RETRY_BEDROCK" =~ ^[Yy]$ ]]; then
+        ask_aws_ak AWS_AK
+        ask_aws_sk AWS_SK
+        ask_optional "AWS Bedrock 区域" AWS_BEDROCK_REGION "$AWS_BEDROCK_REGION"
+        aws configure set aws_access_key_id "$AWS_AK" --profile default
+        aws configure set aws_secret_access_key "$AWS_SK" --profile default
+        aws configure set region "$AWS_BEDROCK_REGION" --profile default
+        # Recalculate prefix after possible region change
+        BEDROCK_TEST_PREFIX="us"
+        case "$AWS_BEDROCK_REGION" in
+            eu-*)  BEDROCK_TEST_PREFIX="eu" ;;
+            ap-*)  BEDROCK_TEST_PREFIX="ap" ;;
+        esac
+        CC_BEDROCK_REGION="$AWS_BEDROCK_REGION"
+        if verify_bedrock_endpoint; then
+            success "Bedrock endpoint verified in ${AWS_BEDROCK_REGION}（新凭证）"
+        else
+            warn "新凭证仍无法访问 Bedrock，安装将继续。"
+            echo -e "  ${YELLOW}安装完成后可以打开新终端输入 ${GREEN}claude${YELLOW} 让它帮你排查权限问题。${NC}"
+        fi
+    else
+        echo -e "  ${GREEN}${BOLD}安装会继续，但请尽快修复权限，否则 Claude Code 和 OpenClaw 无法调用 AI 模型。${NC}"
+        echo -e "  修复后可以打开新终端输入 ${CYAN}claude${NC} 验证是否正常工作。"
+    fi
     echo ""
 fi
 
@@ -665,8 +991,6 @@ add_to_zshrc() {
     fi
 }
 
-add_to_zshrc '# Homebrew'
-add_to_zshrc 'eval "$(/opt/homebrew/bin/brew shellenv)"'
 add_to_zshrc '# fnm (Fast Node Manager)'
 add_to_zshrc 'eval "$(fnm env)"'
 add_to_zshrc '# pnpm'
@@ -1437,155 +1761,11 @@ echo "  tail -50 ~/.openclaw/logs/gateway.err.log"
 REPAIR_EOF
 chmod +x "$OPENCLAW_DIR/scripts/repair.sh"
 
-# Copy repair.sh to ~/Documents/OneClaw/ for easy access
-mkdir -p "$HOME/Documents/OneClaw"
+# Copy repair.sh to ~/Documents/OneClaw/ and create symlink
 cp "$OPENCLAW_DIR/scripts/repair.sh" "$HOME/Documents/OneClaw/repair.command"
 chmod +x "$HOME/Documents/OneClaw/repair.command"
-success "Repair script created: ~/Documents/OneClaw/repair.command"
-
-# ============================================================================
-# Step 12.5: AI-powered repair script (Claude Code --dangerously-skip-permissions)
-# ============================================================================
-info "Creating AI-powered repair script..."
-
-cat > "$OPENCLAW_DIR/scripts/ai-repair.sh" <<'AIREPAIR_EOF'
-#!/bin/bash
-# ai-repair.sh — Let Claude Code diagnose and fix OpenClaw automatically
-# Usage: bash ~/.openclaw/scripts/ai-repair.sh
-#   or:  bash ~/Documents/OneClaw/ai-repair.command
-
-set -euo pipefail
-
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-CYAN='\033[0;36m'
-BOLD='\033[1m'
-NC='\033[0m'
-
-echo -e "\n${CYAN}${BOLD}=== OpenClaw AI Repair (Claude Code) ===${NC}"
-echo -e "${YELLOW}Claude Code will automatically diagnose and fix OpenClaw issues.${NC}"
-echo -e "This may take 1-3 minutes...\n"
-
-# Check Claude Code is available
-if ! command -v claude >/dev/null 2>&1; then
-    echo -e "${RED}Claude Code not found. Please run: source ~/.zshrc${NC}"
-    exit 1
-fi
-
-# Build the diagnostic prompt with all context Claude needs
-REPAIR_PROMPT='You are an OpenClaw repair agent. Diagnose and fix the issue step by step.
-
-## System Layout
-- Config: ~/.openclaw/openclaw.json
-- Logs: ~/.openclaw/logs/ (gateway.log, gateway.err.log, node.log, node.err.log, guardian.log, chrome-stdout.log)
-- LaunchAgents: ~/Library/LaunchAgents/ai.openclaw.{gateway,node,guardian,chrome}.plist
-- Scripts: ~/.openclaw/scripts/
-- AWS creds: ~/.aws/credentials, ~/.aws/config
-- Claude Code: ~/.claude/settings.json, ~/.mcp.json
-
-## Diagnostic Steps (DO ALL OF THESE)
-1. Run `openclaw status` to get current state
-2. Run `openclaw doctor` to check health
-3. Check recent errors: `tail -80 ~/.openclaw/logs/gateway.err.log` and `tail -80 ~/.openclaw/logs/node.err.log`
-4. Check LaunchAgent status: `launchctl list | grep openclaw`
-5. Check if ports are in use: `lsof -i :18789` and `lsof -i :9222`
-6. Verify AWS credentials: `aws sts get-caller-identity`
-
-## Common Issues & Fixes
-- Gateway not starting → check port conflict, check logs, restart LaunchAgent
-- Node not connecting → check gateway is up first, verify token in plist matches openclaw.json
-- Chrome CDP not responding → restart Chrome LaunchAgent, check port 9222
-- AWS auth failure → check ~/.aws/credentials format
-- "already running" errors → kill orphan processes first: `pkill -f "openclaw gateway"; pkill -f "openclaw node"`
-- Permission errors → check file ownership with `ls -la ~/.openclaw/`
-
-## Repair Actions
-After diagnosis, fix the root cause. Then restart services in order:
-1. Stop services (macOS 13+: `launchctl bootout gui/$(id -u)/ai.openclaw.chrome` etc., older: `launchctl unload ~/Library/LaunchAgents/ai.openclaw.*.plist`)
-2. Kill orphans: `pkill -f "openclaw gateway"; pkill -f "openclaw node"`
-3. Start Chrome: `launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/ai.openclaw.chrome.plist` → wait 2s
-4. Start Gateway: `launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/ai.openclaw.gateway.plist` → wait 3s
-5. Start Node: `launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/ai.openclaw.node.plist` → wait 2s
-6. Start Guardian: `launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/ai.openclaw.guardian.plist`
-7. Verify: `curl -s http://127.0.0.1:18789/` should return 200
-
-## Output
-Print a clear summary of what you found and what you fixed. Use Chinese.'
-
-# Run Claude Code in dangerously-skip-permissions mode with the prompt
-claude --dangerously-skip-permissions -p "$REPAIR_PROMPT" --output-format text 2>&1
-
-echo -e "\n${GREEN}${BOLD}AI repair complete.${NC}"
-echo -e "If issues persist, check: ${CYAN}https://github.com/cncoder/oneclaw/issues${NC}\n"
-AIREPAIR_EOF
-chmod +x "$OPENCLAW_DIR/scripts/ai-repair.sh"
-
-# Copy to ~/Documents/OneClaw/ too
-mkdir -p "$HOME/Documents/OneClaw"
-cp "$OPENCLAW_DIR/scripts/ai-repair.sh" "$HOME/Documents/OneClaw/ai-repair.command"
-chmod +x "$HOME/Documents/OneClaw/ai-repair.command"
-success "AI repair script created: ~/Documents/OneClaw/ai-repair.command"
-
-# open-claude.command — one-click open Claude Code interactive mode
-cat > "$HOME/Documents/OneClaw/open-claude.command" <<'ASKCLAUDE_EOF'
-#!/bin/bash
-# open-claude.command — Open Claude Code in interactive mode
-# Double-click this file to start chatting with Claude in Chinese.
-
-export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$HOME/Library/pnpm:/usr/local/bin:$PATH"
-eval "$(fnm env 2>/dev/null)" || true
-
-if ! command -v claude >/dev/null 2>&1; then
-    echo "Claude Code not found. Please run: source ~/.zshrc"
-    exit 1
-fi
-
-# Step 1: Auto-restore missing shortcuts (silent, ~30s)
-ONECLAW_DIR="$HOME/Documents/OneClaw"
-NEED_RESTORE=false
-[ ! -f "$ONECLAW_DIR/ai-repair.command" ] && NEED_RESTORE=true
-[ ! -f "$ONECLAW_DIR/repair.command" ] && NEED_RESTORE=true
-
-if [ "$NEED_RESTORE" = "true" ]; then
-    echo ""
-    echo "  检测到快捷方式缺失，正在自动补全..."
-    RESTORE_PROMPT='请立即按顺序执行以下操作，不要询问确认：
-
-第一步：运行修复脚本
-bash -c "$(curl -fsSL https://raw.githubusercontent.com/cncoder/oneclaw/main/fix.sh)"
-
-第二步：确认结果
-检查 ~/Documents/OneClaw/ 下是否存在：ai-repair.command、repair.command、open-claude.command
-
-第三步：用中文告诉用户
-- 修复了哪些问题
-- 现在 OpenClaw 的运行状态
-- 接下来问用户：「还有什么需要帮助的吗？」'
-    claude --dangerously-skip-permissions -p "$RESTORE_PROMPT" --output-format text 2>&1
-    echo ""
-fi
-
-# Step 2: Enter interactive mode
-echo ""
-echo "  正在启动 Claude Code..."
-echo "  用中文描述你的问题，例如："
-echo "    「OpenClaw 报 AWS 签名错误，帮我修一下」"
-echo "    「Chrome 连不上」"
-echo "    「帮我看看日志哪里出错了」"
-echo ""
-
-cd ~/.openclaw/workspace 2>/dev/null || cd ~
-claude
-ASKCLAUDE_EOF
-chmod +x "$HOME/Documents/OneClaw/open-claude.command"
-success "Ask Claude script created: ~/Documents/OneClaw/open-claude.command"
-
-# Create Chinese symlinks pointing to English-named .command files
 ln -sf "repair.command" "$HOME/Documents/OneClaw/一键修复.command"
-ln -sf "ai-repair.command" "$HOME/Documents/OneClaw/AI修复.command"
-ln -sf "open-claude.command" "$HOME/Documents/OneClaw/打开Claude对话.command"
-success "Chinese symlinks created (一键修复/AI修复/打开Claude对话 → English files)"
+success "Repair script created: ~/Documents/OneClaw/repair.command (一键修复)"
 
 # ============================================================================
 # Done!
