@@ -1203,10 +1203,30 @@ if git clone --depth 1 https://github.com/cncoder/oneclaw.git "$ONECLAW_TMP" 2>/
             success "Skill 已安装: $skill_name"
         fi
     done
+
+    # Install Claude Code sub-agents to ~/.claude/agents/
+    info "安装 Claude Code Sub-Agents..."
+    AGENTS_DIR="$HOME/.claude/agents"
+    mkdir -p "$AGENTS_DIR"
+    if [ -d "$ONECLAW_TMP/agents" ]; then
+        AGENT_COUNT=0
+        for agent_file in "$ONECLAW_TMP"/agents/*.md; do
+            [ -f "$agent_file" ] || continue
+            agent_name=$(basename "$agent_file")
+            # Skip README
+            [ "$agent_name" = "README.md" ] && continue
+            cp "$agent_file" "$AGENTS_DIR/"
+            AGENT_COUNT=$((AGENT_COUNT + 1))
+        done
+        success "Claude Code Sub-Agents 已安装: ${AGENT_COUNT} 个 (${AGENTS_DIR}/)"
+    else
+        warn "agents/ 目录不存在，跳过 Sub-Agents 安装"
+    fi
+
     rm -rf "$ONECLAW_TMP"
 else
-    warn "Skills 自动安装失败（网络问题？），可稍后手动安装。"
-    echo -e "  打开终端输入 ${GREEN}claude${NC}，然后说：「帮我安装 OneClaw skills」"
+    warn "Skills 和 Agents 自动安装失败（网络问题？），可稍后手动安装。"
+    echo -e "  打开终端输入 ${GREEN}claude${NC}，然后说：「帮我安装 OneClaw skills 和 agents」"
 fi
 
 # ============================================================================
@@ -1780,6 +1800,7 @@ echo -e "${NC}"
 echo -e "${BOLD}已安装的组件：${NC}"
 echo "  ✅ fnm, Node.js, pnpm, uv, AWS CLI"
 echo "  ✅ Claude Code（通过 Bedrock 调用 Claude 模型）"
+echo "  ✅ Claude Code Sub-Agents（architect, code-reviewer, researcher 等）"
 echo "  ✅ OpenClaw（Gateway + Node + Guardian 守护进程）"
 echo "  ✅ MCP 服务器（Chrome DevTools、AWS 文档）"
 echo "  ✅ 开机自启动（LaunchAgents）"
