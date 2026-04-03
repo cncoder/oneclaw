@@ -773,7 +773,16 @@ if [ ! -f "$CLAUDE_DIR/CLAUDE.md" ]; then
 
 ## 语言
 
-默认使用中文回复。技术术语保持英文原文。
+默认使用中文回复。技术术语保持英文原文。代码注释和 commit message 用英文。
+
+## 文档先行
+
+禁止仅凭训练数据中的旧知识编码，写代码前必须先查最新文档：
+
+- **编程库/SDK/框架**: 用 Context7 插件查最新用法
+- **AWS 服务/API**: 用 AWS Documentation MCP 查官方文档
+- **第三方 API**: Context7 查文档，查不到则 WebFetch 官方文档页
+- **不确定的参数/接口**: 必须查文档确认，不要猜
 
 ## 编码规范
 
@@ -783,6 +792,22 @@ if [ ! -f "$CLAUDE_DIR/CLAUDE.md" ]; then
 - 优先不可变数据，避免就地修改对象
 - 只在系统边界做输入验证（用户输入、外部 API），内部代码信任传参
 - 不要添加没被要求的功能、注释、类型标注或重构
+- 全栈开发顺序：后端 → API → 前端组件 → 页面集成 → 构建 → 浏览器验证
+
+## 前端开发
+
+- 注重功能完整性和可演示性，优先让功能跑通可见
+- 开发完成后用 Chrome DevTools MCP 截图检查 UI 质量
+- 关注布局、配色、响应式、动效，迭代优化直到界面精致
+- 开发完必须在浏览器中实际测试
+
+## Chrome DevTools (CDP) 使用规则
+
+- **绝对不要在当前聚焦的 tab 直接 navigate** — 用户可能正在使用该页面
+- 必须先用 `new_page` 打开新 tab，在新 tab 里操作
+- 操作完毕后不要关闭用户的其他 tab
+- CDP 超时 → 先 `curl 127.0.0.1:9222/json` 验证连接
+- WebFetch 被 403 拒绝时，立即改用 Chrome DevTools MCP 获取页面内容
 
 ## 安全
 
@@ -790,6 +815,7 @@ if [ ! -f "$CLAUDE_DIR/CLAUDE.md" ]; then
 - 使用环境变量或密钥管理器
 - SQL 必须用参数化查询
 - 用户输入必须做 XSS 防护
+- 禁止直接 `rm` 删除文件，用 `mv` 移到回收目录
 
 ## 工具使用
 
@@ -797,26 +823,56 @@ if [ ! -f "$CLAUDE_DIR/CLAUDE.md" ]; then
 - 用 Edit 改文件，不用 sed/awk
 - 用 Grep 搜索内容，不用 grep/rg
 - 用 Glob 找文件，不用 find/ls
-- 大输出加 `| head -100` 限制
+- Write/Edit 前必须先 Read
+- 大输出 pipe `head -100`
+- 命令失败 2 次换方案
+- Mac 用 `python3` 不是 `python`
+
+## 子代理 (Sub-Agents)
+
+- 子代理任务必须拆小拆细，每个子任务聚焦单一目标
+- 独立任务必须并行执行，不要串行
+- 避免单个代理执行时间过长导致假死
+- 模型选择：Haiku（数据采集/格式化）、Sonnet（日常开发）、Opus（深度分析/架构）
+
+可用子代理：
+
+| 子代理 | 用途 |
+|--------|------|
+| researcher | 调研、文档搜索、信息汇总 |
+| architect | 架构设计、技术决策 |
+| code-reviewer | 代码审查，写完立即用 |
+| qa-tester | 测试、验证 |
+| data-analyst | 数据分析、结构化数据 |
+| cost-optimizer | 云成本分析 |
+| doc-writer | 文档更新 |
 
 ## 调试
 
-- 先读完整错误信息和堆栈
-- 先复现问题，再提修复方案
+- 先读完整错误信息和堆栈，不跳过 warning
+- 先稳定复现问题，再提修复方案
+- 检查 recent changes（git diff、最近 commit）
 - 一次只改一个变量验证假设
-- 连续失败 3 次停下来重新分析
+- 连续失败 3 次停下来重新分析，和用户讨论
+- 禁止"先改了看看"的猜测性修复
+
+## 验证门控
+
+声称完成前必须有新鲜验证证据（运行命令 → 读输出 → 确认）。禁止无证据说"应该可以了"。
 
 ## Git
 
 - Commit message 格式：`<type>: <description>`（feat/fix/refactor/docs/test/chore）
+- 重要步骤后立即 commit 作为 checkpoint
 - 不要自动 commit，除非明确要求
 - 不要 force push、reset --hard、跳过 hooks
 
 ## 可用工具
 
-- **Chrome DevTools MCP**: 浏览器调试（端口 9222）
+- **Chrome DevTools MCP**: 浏览器自动化和调试（端口 9222）
 - **AWS Documentation MCP**: 查询 AWS 官方文档
-- **Context7 Plugin**: 查询编程库/SDK 最新文档
+- **Context7 Plugin**: 查询编程库/SDK/框架最新文档
+- **lark-cli**: 飞书/Lark CLI，支持日历、消息、文档、表格等操作
 GLOBALMD_EOF
     success "Claude Code CLAUDE.md 已生成 (~/.claude/CLAUDE.md)"
 else
