@@ -1,8 +1,12 @@
 #!/usr/bin/env bash
-# Qwen3-TTS Voice Clone — standalone TTS script
+# Qwen3-TTS Voice Clone — standalone single-shot TTS script
+#
 # Usage: tts-clone.sh "text to speak" output.mp3
-# Voice selection via TTS_VOICE env var (default: zhouxun)
-# Supported voices: zhouxun (小周, female), douwendao (涛哥, male), luyu (female)
+# Voice selection via TTS_VOICE env var (default: host_female)
+#
+# Supported voices (customize by adding WAVs to VOICES_DIR):
+#   host_female  — Female host (default)
+#   host_male    — Male host
 #
 # Requirements:
 #   - python3.12 + mlx-audio + soundfile
@@ -17,30 +21,32 @@ OUTPUT="$2"
 
 if [ -z "$TEXT" ] || [ -z "$OUTPUT" ]; then
   echo "Usage: tts-clone.sh <text> <output.mp3>" >&2
-  echo "  TTS_VOICE=douwendao tts-clone.sh \"text\" out.mp3" >&2
+  echo "  TTS_VOICE=host_male tts-clone.sh \"text\" out.mp3" >&2
   exit 1
 fi
 
-VOICES_DIR="${VOICES_DIR:-$HOME/.tts-voices}"
-VOICE="${TTS_VOICE:-zhouxun}"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+VOICES_DIR="${VOICES_DIR:-$SCRIPT_DIR/../assets/voices}"
+VOICE="${TTS_VOICE:-host_female}"
+TTS_MODEL="${TTS_MODEL:-mlx-community/Qwen3-TTS-12Hz-0.6B-Base-8bit}"
 
 case "$VOICE" in
-  zhouxun)
-    REF_AUDIO="$VOICES_DIR/zhouxun_mandarin_10s.wav"
-    REF_TEXT="那种感觉就像是，你突然发现，原来世界上还有这样的地方，安安静静的，什么都不用想。"
+  host_female)
+    REF_AUDIO="$VOICES_DIR/host_female_10s.wav"
+    REF_TEXT="我觉得我刚开始小时候的时候，比如说，其实我是一个挺害羞的人，但我小时候会有一种，就是到了人群里边，我就想让大家开心。"
     ;;
-  douwendao)
-    REF_AUDIO="$VOICES_DIR/douwendao_mandarin_12s.wav"
-    REF_TEXT="这个事情我跟你讲，你别不信，它确实就是这么回事。"
-    ;;
-  luyu)
-    REF_AUDIO="$VOICES_DIR/luyu_mandarin_12s.wav"
-    REF_TEXT="我觉得每个人的生活里都有那么一些时刻，让你觉得一切都值得。"
+  host_male)
+    REF_AUDIO="$VOICES_DIR/host_male_12s.wav"
+    REF_TEXT="我觉得这是我最想生在的时代，不是什么宋朝，也不是什么秦朝，起码这时代有空调啊，对吧？"
     ;;
   *)
-    echo "Unknown voice: $VOICE, falling back to zhouxun" >&2
-    REF_AUDIO="$VOICES_DIR/zhouxun_mandarin_10s.wav"
-    REF_TEXT="那种感觉就像是，你突然发现，原来世界上还有这样的地方，安安静静的，什么都不用想。"
+    # Custom voice: expects $VOICES_DIR/$VOICE.wav and TTS_REF_TEXT env var
+    REF_AUDIO="$VOICES_DIR/$VOICE.wav"
+    REF_TEXT="${TTS_REF_TEXT:-}"
+    if [ -z "$REF_TEXT" ]; then
+      echo "Custom voice '$VOICE': set TTS_REF_TEXT env var with reference transcript" >&2
+      exit 1
+    fi
     ;;
 esac
 
@@ -58,7 +64,8 @@ TEMP_TEXT=$(mktemp /tmp/tts_text_XXXXXXXX) || { echo "mktemp failed" >&2; exit 1
 printf '%s' "$TEXT" > "$TEMP_TEXT"
 
 # Pass parameters via environment variables
-TTS_TEXT_FILE="$TEMP_TEXT" TTS_REF_AUDIO="$REF_AUDIO" TTS_REF_TEXT="$REF_TEXT" TTS_OUTPUT_WAV="$TEMP_WAV" \
+TTS_TEXT_FILE="$TEMP_TEXT" TTS_REF_AUDIO="$REF_AUDIO" TTS_REF_TEXT="$REF_TEXT" \
+TTS_OUTPUT_WAV="$TEMP_WAV" TTS_MODEL_ID="$TTS_MODEL" \
 python3.12 << 'PYEOF'
 import sys, os
 try:
@@ -70,6 +77,7 @@ try:
     ref_audio = os.environ["TTS_REF_AUDIO"]
     ref_text = os.environ["TTS_REF_TEXT"]
     output_wav = os.environ["TTS_OUTPUT_WAV"]
+    model_id = os.environ.get("TTS_MODEL_ID", "mlx-community/Qwen3-TTS-12Hz-0.6B-Base-8bit")
 
     with open(text_file, "r") as f:
         text = f.read().strip()
@@ -78,7 +86,7 @@ try:
         print("Error: empty text", file=sys.stderr)
         sys.exit(1)
 
-    model = load_model("mlx-community/Qwen3-TTS-12Hz-0.6B-Base-8bit")
+    model = load_model(model_id)
 
     def generate_once():
         results = list(model.generate(
