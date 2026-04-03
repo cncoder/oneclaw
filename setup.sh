@@ -735,16 +735,7 @@ cat > "$CLAUDE_DIR/settings.json" <<SETTINGS_EOF
         "autoAllowBashIfSandboxed": true
     },
     "enabledPlugins": {
-        "context7@claude-plugins-official": true,
-        "everything-claude-code@everything-claude-code": true
-    },
-    "extraKnownMarketplaces": {
-        "everything-claude-code": {
-            "source": {
-                "source": "github",
-                "repo": "affaan-m/everything-claude-code"
-            }
-        }
+        "context7@claude-plugins-official": true
     }
 }
 SETTINGS_EOF
@@ -818,9 +809,9 @@ else
 fi
 
 # ============================================================================
-# Step 4: Core dependencies (Node.js, pnpm, uv, AWS CLI, Chrome)
+# Step 4: Core dependencies (pnpm, lark-cli, uv, AWS CLI, Chrome)
 # ============================================================================
-step 4 "Install core dependencies (pnpm, uv, AWS CLI)"
+step 4 "Install core dependencies (pnpm, lark-cli, uv, AWS CLI)"
 
 # pnpm
 if check_command pnpm; then
@@ -835,6 +826,23 @@ else
     else
         echo -e "${RED}pnpm 安装失败。${NC}你可以打开新终端输入 ${GREEN}claude${NC} 让它帮你修，或手动运行: ${CYAN}npm install -g pnpm${NC}"
         exit 1
+    fi
+fi
+
+# lark-cli (Lark/Feishu CLI for AI Agents)
+if check_command lark-cli; then
+    success "lark-cli already installed: $(lark-cli --version 2>/dev/null || echo 'installed')"
+else
+    info "Installing lark-cli (飞书/Lark CLI)..."
+    if npm install -g @larksuite/cli 2>/dev/null; then
+        success "lark-cli installed"
+        # Install lark-cli skills for Claude Code
+        info "安装 lark-cli Skills..."
+        npx skills add larksuite/cli -y -g 2>/dev/null \
+            && success "lark-cli Skills 已安装" \
+            || warn "lark-cli Skills 安装失败，可稍后运行: npx skills add larksuite/cli -y -g"
+    else
+        warn "lark-cli 安装失败，可稍后手动运行: npm install -g @larksuite/cli"
     fi
 fi
 
@@ -1191,16 +1199,26 @@ npx clawhub install spclaudehome/skill-vetter --dir "$OPENCLAW_DIR/skills" 2>/de
     && success "skill-vetter 已安装" \
     || warn "skill-vetter 安装失败，可稍后手动安装：npx clawhub install spclaudehome/skill-vetter"
 
-# Install OneClaw bundled skills (claude-code, aws-infra, chrome-devtools, skill-vetting)
-info "安装 OneClaw 预置 Skills..."
-SKILLS_DIR="$OPENCLAW_DIR/workspace/skills"
-mkdir -p "$SKILLS_DIR"
+# Install OneClaw bundled skills + Claude Code universal skills
+info "安装 Skills..."
+OC_SKILLS_DIR="$OPENCLAW_DIR/workspace/skills"
+CC_SKILLS_DIR="$HOME/.claude/skills"
+mkdir -p "$OC_SKILLS_DIR" "$CC_SKILLS_DIR"
 ONECLAW_TMP="/tmp/oneclaw-skills-$$"
 if git clone --depth 1 https://github.com/cncoder/oneclaw.git "$ONECLAW_TMP" 2>/dev/null; then
+    # OpenClaw-specific skills → ~/.openclaw/workspace/skills/
     for skill_name in claude-code aws-infra chrome-devtools skill-vetting; do
         if [ -d "$ONECLAW_TMP/skills/$skill_name" ]; then
-            cp -r "$ONECLAW_TMP/skills/$skill_name" "$SKILLS_DIR/"
-            success "Skill 已安装: $skill_name"
+            cp -r "$ONECLAW_TMP/skills/$skill_name" "$OC_SKILLS_DIR/"
+            success "OpenClaw Skill: $skill_name"
+        fi
+    done
+
+    # Universal dev skills → ~/.claude/skills/ (for Claude Code direct use)
+    for skill_name in coding-standards security-review python-patterns frontend-patterns backend-patterns api-design docker-patterns database-migrations deployment-patterns; do
+        if [ -d "$ONECLAW_TMP/skills/$skill_name" ]; then
+            cp -r "$ONECLAW_TMP/skills/$skill_name" "$CC_SKILLS_DIR/"
+            success "Claude Code Skill: $skill_name"
         fi
     done
 
@@ -1798,7 +1816,7 @@ echo "  ╚═══════════════════════
 echo -e "${NC}"
 
 echo -e "${BOLD}已安装的组件：${NC}"
-echo "  ✅ fnm, Node.js, pnpm, uv, AWS CLI"
+echo "  ✅ fnm, Node.js, pnpm, lark-cli, uv, AWS CLI"
 echo "  ✅ Claude Code（通过 Bedrock 调用 Claude 模型）"
 echo "  ✅ Claude Code Sub-Agents（architect, code-reviewer, researcher 等）"
 echo "  ✅ OpenClaw（Gateway + Node + Guardian 守护进程）"
