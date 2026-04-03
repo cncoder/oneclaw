@@ -12,7 +12,7 @@ metadata:
 
 > Apple Silicon only (M1/M2/M3/M4)。mlx 不支持 Intel Mac 或 Linux。
 
-本地**中文** AI 播客系统。包含完整可运行的 TTS 引擎和参考音频，开箱即用。
+本地**中文双人对话式**播客生成系统（圆桌派风格）。两位主持人交替发言，自动分配左右声道，生成有临场感的播客音频。包含完整可运行的 TTS 引擎和参考音频，开箱即用。
 
 **核心能力：**
 - 中文对话式播客生成（双主持人，stereo 立体声，MP3 192kbps）
@@ -111,7 +111,7 @@ TTS_VOICE=my_voice TTS_REF_TEXT="参考音频的文字内容" \
 | 编码 | ffmpeg (WAV → MP3) | — |
 | Python | 3.12（mlx 依赖 3.12 C API） | 不可替换 |
 
-**关于脚本生成**：本 skill 只包含 TTS 引擎，不包含脚本生成（LLM 对话编写）。脚本生成依赖 LLM（Bedrock/OpenAI/MiniMax 等均可），你可以用任何 LLM 生成 `【角色A】...【角色B】...` 格式的对话脚本，然后喂给 TTS。
+**关于脚本生成**：本 skill 只包含 TTS 引擎，不包含脚本生成（LLM 对话编写）。脚本生成依赖 LLM（Claude / GPT / MiniMax / Qwen 等均可），用任何 LLM 生成 `【Host_A】...【Host_B】...` 格式的双人对话脚本即可。**经过实战验证的提示词模板见 `references/script-prompt.md`**，包含 system prompt、user prompt 模板、字数时长对照表和分批策略。
 
 ## 核心代码说明
 
@@ -175,6 +175,7 @@ TTS_VOICE=my_voice TTS_REF_TEXT="参考音频的文字内容" \
 
 | 文件 | 何时读取 |
 |------|---------|
+| `references/script-prompt.md` | 用 LLM 生成播客脚本的提示词模板（首次使用必读） |
 | `references/tts-module.md` | TTS Server HTTP API、ASR 回检细节、缓存机制 |
 | `references/data-sources.md` | 每日日报板块配置（用于完整播客 pipeline） |
 | `references/troubleshooting.md` | 遇到故障时 |
