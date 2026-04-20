@@ -1,6 +1,6 @@
 # Claude Code Skills Collection
 
-9 battle-tested Skills covering the core Claude Code use cases — from browser automation to infrastructure ops.
+10 battle-tested Skills covering the core Claude Code use cases — from browser automation to infrastructure ops.
 
 ## Skill Catalog
 
@@ -15,6 +15,7 @@
 | CI/CD & Deployment | [`aws-infra`](aws-infra/) | AWS infrastructure queries, auditing, and monitoring — read-only by default |
 | Runbook | [`deep-research`](deep-research/) | Structured research: multi-source search, freshness filtering, cross-validation |
 | Infrastructure Ops | [`config-sync`](config-sync/) | CLAUDE.md contradiction detection, stale reference checks, audit reports |
+| Infrastructure Ops | [`openclaw-upgrade`](openclaw-upgrade/) | Upgrade OpenClaw: pre-flight, install, config migration, launchd re-register, smoke test, rollback |
 
 **Bonus:** [`architecture-svg`](architecture-svg/) — Generate dark-theme SVG architecture diagrams for GitHub READMEs.
 
@@ -71,6 +72,10 @@ Scans CLAUDE.md files for contradictions, stale references, and redundancy. Gene
 ### architecture-svg
 
 Generates professional dark-theme SVG architecture diagrams optimized for GitHub README rendering. Supports AWS, system, and network topologies.
+
+### openclaw-upgrade
+
+Runbook for upgrading OpenClaw cleanly on macOS: pre-flight checks, pnpm install via proxy, config migration (breaking-change table), pnpm store cleanup, launchd re-registration, agent smoke test, and rollback. Includes a "Common Pitfalls" quick list — the 10 mistakes that block most upgrades.
 
 ## License
 
