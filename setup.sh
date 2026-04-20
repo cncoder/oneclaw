@@ -393,12 +393,12 @@ info "创建快捷脚本到 ~/Documents/OneClaw/ ..."
 mkdir -p "$HOME/Documents/OneClaw"
 
 # open-claude.command — one-click open Claude Code interactive mode
+# open-claude.command — one-click open Claude Code interactive mode
 cat > "$HOME/Documents/OneClaw/open-claude.command" <<'ASKCLAUDE_EOF'
 #!/bin/bash
 # open-claude.command — Open Claude Code in interactive mode
-# Double-click this file to start chatting with Claude in Chinese.
 
-export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$HOME/Library/pnpm:/usr/local/bin:$PATH"
+export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$HOME/Library/pnpm:/opt/homebrew/bin:/usr/local/bin:$PATH"
 eval "$(fnm env 2>/dev/null)" || true
 
 if ! command -v claude >/dev/null 2>&1; then
@@ -414,81 +414,219 @@ echo "    「OpenClaw 报错了，帮我看看日志」"
 echo "    「Chrome 连不上」"
 echo ""
 
-cd ~/.openclaw/workspace 2>/dev/null || cd ~
+# Run from ~/Downloads so Claude doesn't prompt to trust root dir
+mkdir -p ~/Downloads
+cd ~/Downloads
 claude
 ASKCLAUDE_EOF
 chmod +x "$HOME/Documents/OneClaw/open-claude.command"
 
-# ai-repair.command — Let Claude Code diagnose and fix OpenClaw automatically
+# ai-repair.command — Full-stack OneClaw AI diagnostic + repair
 cat > "$HOME/Documents/OneClaw/ai-repair.command" <<'AIREPAIR_EOF'
 #!/bin/bash
-# ai-repair.command — Let Claude Code diagnose and fix OpenClaw automatically
-# Double-click this file or run: bash ~/Documents/OneClaw/ai-repair.command
+# ai-repair.command — OneClaw full-stack AI diagnostic + repair
+# Covers: OpenClaw / Claude Code / AWS Bedrock / Chrome CDP / Skills / Agents / MCP / proxy / LaunchAgents
 
 set -euo pipefail
 
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-CYAN='\033[0;36m'
-BOLD='\033[1m'
-NC='\033[0m'
+RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
+CYAN='\033[0;36m'; BOLD='\033[1m'; NC='\033[0m'
 
-export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$HOME/Library/pnpm:/usr/local/bin:$PATH"
+export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$HOME/Library/pnpm:/opt/homebrew/bin:/usr/local/bin:$PATH"
 eval "$(fnm env 2>/dev/null)" || true
 
-echo -e "\n${CYAN}${BOLD}=== OpenClaw AI Repair (Claude Code) ===${NC}"
-echo -e "${YELLOW}Claude Code will automatically diagnose and fix OpenClaw issues.${NC}"
-echo -e "This may take 1-3 minutes...\n"
+# Run from ~/Downloads so Claude Code doesn't prompt to trust root dir every time
+mkdir -p ~/Downloads
+cd ~/Downloads
+
+echo -e "\n${CYAN}${BOLD}=== OneClaw 全栈 AI 诊断+修复 ===${NC}"
+echo -e "${YELLOW}覆盖 OpenClaw / Claude Code / AWS / Chrome / Skills / MCP 所有环节${NC}"
+echo -e "${YELLOW}预计 2-5 分钟${NC}\n"
 
 if ! command -v claude >/dev/null 2>&1; then
-    echo -e "${RED}Claude Code not found. Please run: source ~/.zshrc${NC}"
+    echo -e "${RED}找不到 claude 命令。${NC}"
+    echo -e "请新开一个终端窗口重试，或先执行: ${CYAN}source ~/.zshrc${NC}"
+    echo -e "仍无效就重新装: ${CYAN}curl -fsSL https://claude.ai/install.sh | bash${NC}"
     exit 1
 fi
 
-REPAIR_PROMPT='You are an OpenClaw repair agent. Diagnose and fix the issue step by step.
+REPAIR_PROMPT='你是 OneClaw 全栈诊断修复 agent（覆盖 OpenClaw + Claude Code + AWS Bedrock + Chrome CDP + Skills + MCP + 代理）。
 
-## System Layout
-- Config: ~/.openclaw/openclaw.json
-- Logs: ~/.openclaw/logs/ (gateway.log, gateway.err.log, node.log, node.err.log, guardian.log, chrome-stdout.log)
-- LaunchAgents: ~/Library/LaunchAgents/ai.openclaw.{gateway,node,guardian,chrome}.plist
-- Scripts: ~/.openclaw/scripts/
-- AWS creds: ~/.aws/credentials, ~/.aws/config
-- Claude Code: ~/.claude/settings.json, ~/.mcp.json
+铁律（不遵守直接中止）：
+- 不确定根因就停下来告诉用户，绝不瞎改
+- 任何删文件用 `mv ~/.Trash/`，不用 `rm`
+- 改 openclaw.json 前先 `cp ~/.openclaw/openclaw.json ~/.openclaw/openclaw.json.bak.$(date +%s)`
+- 改 plist 后必须 `launchctl bootout` + `bootstrap`（`kickstart -k` 不重读 env）
+- 只报告事实 + 做的事，不编造
 
-## Diagnostic Steps (DO ALL OF THESE)
-1. Run `openclaw status` to get current state
-2. Run `openclaw doctor` to check health
-3. Check recent errors: `tail -80 ~/.openclaw/logs/gateway.err.log` and `tail -80 ~/.openclaw/logs/node.err.log`
-4. Check LaunchAgent status: `launchctl list | grep openclaw`
-5. Check if ports are in use: `lsof -i :18789` and `lsof -i :9222`
-6. Verify AWS credentials: `aws sts get-caller-identity`
+# ===== Step 1: 全栈采集（只读，全跑完再分析）=====
 
-## Common Issues & Fixes
-- Gateway not starting → check port conflict, check logs, restart LaunchAgent
-- Node not connecting → check gateway is up first, verify token in plist matches openclaw.json
-- Chrome CDP not responding → restart Chrome LaunchAgent, check port 9222
-- AWS auth failure → check ~/.aws/credentials format
-- "already running" errors → kill orphan processes first: `pkill -f "openclaw gateway"; pkill -f "openclaw node"`
-- Permission errors → check file ownership with `ls -la ~/.openclaw/`
+## 1a. 基础环境
+```
+sw_vers
+uname -m
+which claude node pnpm aws openclaw 2>&1
+claude --version
+openclaw --version 2>&1 || echo "openclaw MISSING"
+node -v
+pnpm -v
+aws --version 2>&1
+echo "PNPM_HOME=${PNPM_HOME:-unset}"
+echo "https_proxy=${https_proxy:-unset}"
+```
 
-## Repair Actions
-After diagnosis, fix the root cause. Then restart services in order:
-1. Stop services (macOS 13+: `launchctl bootout gui/$(id -u)/ai.openclaw.chrome` etc., older: `launchctl unload ~/Library/LaunchAgents/ai.openclaw.*.plist`)
-2. Kill orphans: `pkill -f "openclaw gateway"; pkill -f "openclaw node"`
-3. Start Chrome: `launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/ai.openclaw.chrome.plist` → wait 2s
-4. Start Gateway: `launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/ai.openclaw.gateway.plist` → wait 3s
-5. Start Node: `launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/ai.openclaw.node.plist` → wait 2s
-6. Start Guardian: `launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/ai.openclaw.guardian.plist`
-7. Verify: `curl -s http://127.0.0.1:18789/` should return 200
+## 1b. OpenClaw 运行态
+```
+openclaw daemon status 2>&1
+openclaw doctor 2>&1
+launchctl list | grep -E "openclaw|abel"
+pgrep -fl openclaw
+lsof -nP -i :18789 -i :9222 -i :8880 2>/dev/null
+```
 
-## Output
-Print a clear summary of what you found and what you fixed. Use Chinese.'
+## 1c. OpenClaw 配置与日志
+```
+test -f ~/.openclaw/openclaw.json && python3 -c "import json; json.load(open(\"$HOME/.openclaw/openclaw.json\"))" 2>&1 || echo "JSON INVALID"
+ls -la ~/Library/LaunchAgents/ai.openclaw.*.plist 2>/dev/null
+tail -80 ~/.openclaw/logs/gateway.err.log 2>/dev/null
+tail -80 ~/.openclaw/logs/node.err.log 2>/dev/null
+tail -40 ~/.openclaw/logs/gateway.log 2>/dev/null | grep -iE "error|fatal|reconnect|proxy|econn|etimedout|reason=auth|no api key"
+```
+
+## 1d. Claude Code 状态
+```
+ls -la ~/.claude/settings.json ~/.mcp.json 2>&1
+test -f ~/.claude/settings.json && python3 -m json.tool ~/.claude/settings.json > /dev/null 2>&1 && echo "settings.json OK" || echo "settings.json BROKEN"
+ls ~/.claude/skills/ 2>&1 | head -20
+ls ~/.claude/agents/ 2>&1 | head -20
+```
+
+## 1e. AWS / Bedrock
+```
+test -f ~/.aws/credentials && echo "~/.aws/credentials exists" || echo "~/.aws/credentials MISSING"
+aws sts get-caller-identity 2>&1
+aws bedrock list-inference-profiles --region us-west-2 --query "inferenceProfileSummaries[?contains(inferenceProfileId, \`opus-4-7\`) || contains(inferenceProfileId, \`sonnet-4-6\`) || contains(inferenceProfileId, \`haiku-4-5\`)].inferenceProfileId" --output text 2>&1 | head -5
+# 检查 plist 是否注入了 AWS 环境变量（pi-ai 必需）
+grep -A1 "AWS_ACCESS_KEY_ID\|AWS_REGION\|AWS_SECRET" ~/Library/LaunchAgents/ai.openclaw.gateway.plist 2>/dev/null | head -20
+```
+
+## 1f. Chrome CDP
+```
+curl -s -m 3 http://127.0.0.1:9222/json/version 2>&1 | head -5
+ls -d ~/.openclaw/browser/abel-chrome ~/.openclaw/chrome-profile 2>/dev/null
+```
+
+## 1g. 网络 / 代理
+```
+curl -s -o /dev/null -m 5 -w "github %{http_code} %{time_total}s\n" https://github.com
+curl -s -o /dev/null -m 5 -w "bedrock %{http_code} %{time_total}s\n" https://bedrock.us-west-2.amazonaws.com
+curl -s -o /dev/null -m 5 -w "discord %{http_code} %{time_total}s\n" https://discord.com/api/v10/gateway
+for port in 7897 7890 1087 8080; do
+  curl -s -o /dev/null -m 2 --proxy http://127.0.0.1:$port https://www.google.com -w "proxy $port: %{http_code}\n" 2>/dev/null || true
+done
+```
+
+## 1h. pnpm / Node 健康
+```
+ls "$HOME/Library/pnpm/global/5/.pnpm/" 2>/dev/null | grep openclaw | head -5
+ls "$HOME/Library/pnpm/global/5/node_modules/openclaw/" 2>/dev/null | head -5
+```
+
+# ===== Step 2: 根因 → 修复映射（严格按症状判断）=====
+
+## OpenClaw 层
+| 症状 | 根因 | 修复 |
+|-----|-----|------|
+| `ERR_MODULE_NOT_FOUND: tslog` / bundled plugins 缺文件 | pnpm store 污染 | `pnpm store prune` → `mv $HOME/Library/pnpm/global/5/.pnpm/openclaw@<坏版本>* ~/.Trash/` → 重装 |
+| `No API key found for amazon-bedrock` | gateway plist 没注入 AWS env（pi-ai 只读进程 env，不读 openclaw.json.env.vars） | 给 plist 的 `EnvironmentVariables` 加 AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY / AWS_REGION；bootout+bootstrap 重载 |
+| `reason=auth candidate=...claude-opus-4-6-v1` | 旧 inference profile 下线 | openclaw.json 里所有 `model.primary` / `imageModel.primary` / 子 agent `model` 更新到 `global.anthropic.claude-opus-4-7` / `global.anthropic.claude-sonnet-4-6` / `global.anthropic.claude-haiku-4-5-20251001-v1:0` |
+| `Invalid config ... Unrecognized key` | 升级后字段被移除 | `openclaw doctor --fix`，仍报则手动删 cliBackends / talk.voiceId / feishu 旧 streaming 标量等 |
+| `discord: Max reconnect attempts` + ETIMEDOUT/ECONNRESET | 防火墙/fake-ip，ws 不读 env 代理 | openclaw.json 里设 `channels.discord.proxy: "http://127.0.0.1:7897"` + `channels.telegram.proxy` 同上，重启 gateway |
+| Gateway plist 里写着 `openclaw@旧版本` | 升级后没重注册 | `openclaw daemon install --force` + `openclaw node install --force` |
+| `Invalid JSON` | openclaw.json 手改坏了 | 从 `openclaw.json.bak*` 或 git 恢复；没备份就报告不要瞎改 |
+| LaunchAgent 非 0 退出 | 具体 bug | 先看对应 .err.log 定位 |
+| 端口 18789/9222 被占 | 孤儿进程 | `pkill -f openclaw-gateway; pkill -f openclaw-node; pkill -f "remote-debugging-port=9222"` 后 bootstrap |
+| `better_sqlite3 NODE_MODULE_VERSION mismatch` | Node 升级后 native 模块失效 | `cd $(brew --prefix)/lib/node_modules/@tobilu/qmd && npm rebuild better-sqlite3` |
+
+## Claude Code 层
+| 症状 | 根因 | 修复 |
+|-----|-----|------|
+| `claude` 命令找不到 | PATH 未加载 | `source ~/.zshrc`；仍无效重装：`curl -fsSL https://claude.ai/install.sh \| bash` |
+| `~/.claude/settings.json` 损坏 | JSON 语法错 | 贴出错误行让用户确认，或从 git/备份恢复 |
+| `~/.claude/skills/` 为空 | setup.sh 没跑完 | `git clone --depth 1 https://github.com/cncoder/oneclaw.git /tmp/oneclaw-skills && cp -r /tmp/oneclaw-skills/skills/* ~/.claude/skills/` |
+| `~/.claude/agents/` 为空 | 同上 | `cp -r /tmp/oneclaw-skills/agents/*.md ~/.claude/agents/`（跳过 README.md） |
+| MCP 连不上（chrome-devtools/aws-documentation） | `~/.mcp.json` 配置错 | 贴出错误，向用户确认是否需要重建 |
+
+## AWS 层
+| 症状 | 根因 | 修复 |
+|-----|-----|------|
+| `aws sts get-caller-identity` 失败 `InvalidClientTokenId` | Access Key 错或已失效 | 让用户到 AWS Console → IAM → 用户 → Security credentials 重发一对新的 |
+| `list-inference-profiles` 无 opus-4-7 | 账号没开通模型访问 | 让用户去 Bedrock Console → Model access 申请 Anthropic Claude 全家桶 |
+| 返回 403 `bedrock:InvokeModel` | IAM 策略不够 | 需要 `AmazonBedrockFullAccess` 或等价自定义策略 |
+
+## Chrome CDP 层
+| 症状 | 根因 | 修复 |
+|-----|-----|------|
+| `curl :9222/json/version` 连不上 | Chrome LaunchAgent 未启动 | `pkill -f "remote-debugging-port=9222"` → `launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/ai.openclaw.chrome.plist` |
+| profile 路径不存在 | 新装或被清理 | `mkdir -p ~/.openclaw/browser/abel-chrome`（或 chrome-profile，看 plist 配的是哪个）|
+
+## 网络层
+| 症状 | 根因 | 修复 |
+|-----|-----|------|
+| 所有 curl 都超时/reset 但代理端口可达 | 直连被拦，需走代理 | 环境变量只对 axios/undici 生效，Discord ws 需要 openclaw.json 里 `channels.*.proxy` |
+| 访问解析到 198.18.x.x 被 reset | Clash fake-ip 污染 | 配 `channels.discord.proxy` 让 ws 走代理，或 DoH 兜底 |
+
+# ===== Step 3: 服务重启顺序（只在需要时执行）=====
+
+```
+launchctl bootout gui/$(id -u)/ai.openclaw.node 2>/dev/null || true
+launchctl bootout gui/$(id -u)/ai.openclaw.gateway 2>/dev/null || true
+pkill -f openclaw-gateway 2>/dev/null || true
+pkill -f openclaw-node 2>/dev/null || true
+sleep 1
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/ai.openclaw.gateway.plist
+sleep 3
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/ai.openclaw.node.plist
+sleep 2
+curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:18789/
+```
+期望返回 200 或 401（401 = 正常，需要 token 登录）。
+
+# ===== Step 4: 最终验证（必须跑）=====
+
+```
+openclaw daemon status   # Runtime: running, RPC probe: ok
+openclaw agent --agent main -m "say hi in 3 words" --timeout 60   # 必须能返回文本
+```
+
+`doctor ok ≠ agent ok`。agent 测试失败就继续回到 Step 2 找下一个根因。
+
+# ===== 输出格式（中文）=====
+
+## 发现的问题
+- 列出命中的症状 + 贴关键日志（带行号/时间戳）
+- 按严重度排序（P0: 服务挂了 / P1: 功能残缺 / P2: 告警）
+
+## 执行的修复
+- 每一步：做了什么 + 为什么 + 命令
+- 改了配置的，贴 diff
+
+## 验证结果
+- `daemon status` 输出
+- `agent` smoke test 输出
+- 仍异常的日志尾部
+
+## 未解决 / 需用户决策
+- 凭证类问题（AWS Key 失效、Discord token 错）只提示不自动改
+- 破坏性变更（删配置、回滚版本）先问用户
+- 若完全定位不到，列出已收集的证据交回给用户
+
+开始执行。'
 
 claude --dangerously-skip-permissions -p "$REPAIR_PROMPT" --output-format text 2>&1
 
-echo -e "\n${GREEN}${BOLD}AI repair complete.${NC}"
-echo -e "If issues persist, check: ${CYAN}https://github.com/cncoder/oneclaw/issues${NC}\n"
+echo -e "\n${GREEN}${BOLD}AI 诊断完成${NC}"
+echo -e "如仍有问题请提 issue 附上本次输出: ${CYAN}https://github.com/cncoder/oneclaw/issues${NC}\n"
 AIREPAIR_EOF
 chmod +x "$HOME/Documents/OneClaw/ai-repair.command"
 
