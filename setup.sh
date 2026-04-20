@@ -1340,7 +1340,7 @@ if git clone --depth 1 https://github.com/cncoder/oneclaw.git "$ONECLAW_TMP" 2>/
     done
 
     # Universal dev skills → ~/.claude/skills/ (for Claude Code direct use)
-    for skill_name in coding-standards security-review python-patterns frontend-patterns backend-patterns api-design docker-patterns database-migrations deployment-patterns; do
+    for skill_name in coding-standards security-review python-patterns frontend-patterns backend-patterns api-design docker-patterns database-migrations deployment-patterns openclaw-upgrade; do
         if [ -d "$ONECLAW_TMP/skills/$skill_name" ]; then
             cp -r "$ONECLAW_TMP/skills/$skill_name" "$CC_SKILLS_DIR/"
             success "Claude Code Skill: $skill_name"
@@ -1976,6 +1976,13 @@ echo -e "${YELLOW}${BOLD}接下来做什么：${NC}"
 echo -e "  1. 按 ${GREEN}Command + N${NC} 打开一个新的终端窗口（很重要！新窗口才能识别刚装的命令）"
 echo -e "  2. 在新窗口输入：${CYAN}claude${NC}  然后按回车"
 echo -e "  3. Claude Code 启动后，你可以用中文和它对话，让它帮你写代码、排查问题"
+echo ""
+echo -e "${BOLD}已装的 Claude Code Skills（放在 ~/.claude/skills/）：${NC}"
+echo -e "  coding-standards / security-review / python-patterns / frontend-patterns"
+echo -e "  backend-patterns / api-design / docker-patterns / database-migrations"
+echo -e "  deployment-patterns / openclaw-upgrade"
+echo -e "  ${CYAN}用法示例${NC}：在 Claude Code 里直接说「用 openclaw-upgrade 把 openclaw 升级到 latest」"
+echo -e "  完整目录：https://github.com/cncoder/oneclaw/tree/main/skills"
 echo ""
 
 if [ -n "$DISCORD_BOT_TOKEN" ]; then
