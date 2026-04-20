@@ -393,12 +393,11 @@ info "创建快捷脚本到 ~/Documents/OneClaw/ ..."
 mkdir -p "$HOME/Documents/OneClaw"
 
 # open-claude.command — one-click open Claude Code interactive mode
-# open-claude.command — one-click open Claude Code interactive mode
 cat > "$HOME/Documents/OneClaw/open-claude.command" <<'ASKCLAUDE_EOF'
 #!/bin/bash
 # open-claude.command — Open Claude Code in interactive mode
 
-export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$HOME/Library/pnpm:/opt/homebrew/bin:/usr/local/bin:$PATH"
+export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$HOME/Library/pnpm:/usr/local/bin:$PATH"
 eval "$(fnm env 2>/dev/null)" || true
 
 if ! command -v claude >/dev/null 2>&1; then
@@ -414,7 +413,6 @@ echo "    「OpenClaw 报错了，帮我看看日志」"
 echo "    「Chrome 连不上」"
 echo ""
 
-# Run from ~/Downloads so Claude doesn't prompt to trust root dir
 mkdir -p ~/Downloads
 cd ~/Downloads
 claude
@@ -424,8 +422,8 @@ chmod +x "$HOME/Documents/OneClaw/open-claude.command"
 # ai-repair.command — Full-stack OneClaw AI diagnostic + repair
 cat > "$HOME/Documents/OneClaw/ai-repair.command" <<'AIREPAIR_EOF'
 #!/bin/bash
-# ai-repair.command — OneClaw full-stack AI diagnostic + repair
-# Covers: OpenClaw / Claude Code / AWS Bedrock / Chrome CDP / Skills / Agents / MCP / proxy / LaunchAgents
+# ai-repair.command — OneClaw 全栈 AI 诊断+修复
+# 覆盖：OpenClaw / Claude Code / AWS Bedrock / Chrome CDP / Skills / Agents / MCP / 代理 / LaunchAgents
 
 set -euo pipefail
 
@@ -440,8 +438,8 @@ mkdir -p ~/Downloads
 cd ~/Downloads
 
 echo -e "\n${CYAN}${BOLD}=== OneClaw 全栈 AI 诊断+修复 ===${NC}"
-echo -e "${YELLOW}覆盖 OpenClaw / Claude Code / AWS / Chrome / Skills / MCP 所有环节${NC}"
-echo -e "${YELLOW}预计 2-5 分钟${NC}\n"
+echo -e "${YELLOW}覆盖 OpenClaw / Claude Code / AWS / Chrome / Skills / MCP 的所有环节${NC}"
+echo -e "${YELLOW}预计 2-5 分钟（视问题严重程度）${NC}\n"
 
 if ! command -v claude >/dev/null 2>&1; then
     echo -e "${RED}找不到 claude 命令。${NC}"
@@ -458,6 +456,7 @@ REPAIR_PROMPT='你是 OneClaw 全栈诊断修复 agent（覆盖 OpenClaw + Claud
 - 改 openclaw.json 前先 `cp ~/.openclaw/openclaw.json ~/.openclaw/openclaw.json.bak.$(date +%s)`
 - 改 plist 后必须 `launchctl bootout` + `bootstrap`（`kickstart -k` 不重读 env）
 - 只报告事实 + 做的事，不编造
+- **不检测 Discord/Telegram/Feishu 网络可达性**（用户可能根本没启用这些 channel）。只在 openclaw.json 里配置了对应 channel 且日志有 ETIMEDOUT/reconnect 时才排查
 
 # ===== Step 1: 全栈采集（只读，全跑完再分析）=====
 
@@ -479,7 +478,7 @@ echo "https_proxy=${https_proxy:-unset}"
 ```
 openclaw daemon status 2>&1
 openclaw doctor 2>&1
-launchctl list | grep -E "openclaw|abel"
+launchctl list | grep openclaw
 pgrep -fl openclaw
 lsof -nP -i :18789 -i :9222 -i :8880 2>/dev/null
 ```
@@ -491,6 +490,8 @@ ls -la ~/Library/LaunchAgents/ai.openclaw.*.plist 2>/dev/null
 tail -80 ~/.openclaw/logs/gateway.err.log 2>/dev/null
 tail -80 ~/.openclaw/logs/node.err.log 2>/dev/null
 tail -40 ~/.openclaw/logs/gateway.log 2>/dev/null | grep -iE "error|fatal|reconnect|proxy|econn|etimedout|reason=auth|no api key"
+# 兜底：查最近 1 天内任何 log 文件
+find ~/.openclaw -name "*.log" -mtime -1 2>/dev/null | head -20
 ```
 
 ## 1d. Claude Code 状态
@@ -505,7 +506,7 @@ ls ~/.claude/agents/ 2>&1 | head -20
 ```
 test -f ~/.aws/credentials && echo "~/.aws/credentials exists" || echo "~/.aws/credentials MISSING"
 aws sts get-caller-identity 2>&1
-aws bedrock list-inference-profiles --region us-west-2 --query "inferenceProfileSummaries[?contains(inferenceProfileId, \`opus-4-7\`) || contains(inferenceProfileId, \`sonnet-4-6\`) || contains(inferenceProfileId, \`haiku-4-5\`)].inferenceProfileId" --output text 2>&1 | head -5
+aws bedrock list-inference-profiles --region us-west-2 --output text 2>&1 | grep -E "opus-4-7|sonnet-4-6|haiku-4-5" | head -5
 # 检查 plist 是否注入了 AWS 环境变量（pi-ai 必需）
 grep -A1 "AWS_ACCESS_KEY_ID\|AWS_REGION\|AWS_SECRET" ~/Library/LaunchAgents/ai.openclaw.gateway.plist 2>/dev/null | head -20
 ```
@@ -520,16 +521,16 @@ ls -d ~/.openclaw/browser/abel-chrome ~/.openclaw/chrome-profile 2>/dev/null
 ```
 curl -s -o /dev/null -m 5 -w "github %{http_code} %{time_total}s\n" https://github.com
 curl -s -o /dev/null -m 5 -w "bedrock %{http_code} %{time_total}s\n" https://bedrock.us-west-2.amazonaws.com
-curl -s -o /dev/null -m 5 -w "discord %{http_code} %{time_total}s\n" https://discord.com/api/v10/gateway
-for port in 7897 7890 1087 8080; do
+# 检测本地代理（用户可能用 Clash/Stash/V2ray 任一端口）
+for port in 7897 7890 1087 8080 8888 10808; do
   curl -s -o /dev/null -m 2 --proxy http://127.0.0.1:$port https://www.google.com -w "proxy $port: %{http_code}\n" 2>/dev/null || true
 done
 ```
 
 ## 1h. pnpm / Node 健康
 ```
-ls "$HOME/Library/pnpm/global/5/.pnpm/" 2>/dev/null | grep openclaw | head -5
-ls "$HOME/Library/pnpm/global/5/node_modules/openclaw/" 2>/dev/null | head -5
+ls "$HOME/Library/pnpm/global/"*"/.pnpm/" 2>/dev/null | grep openclaw | head -5
+ls "$HOME/Library/pnpm/global/"*"/node_modules/openclaw/" 2>/dev/null | head -5
 ```
 
 # ===== Step 2: 根因 → 修复映射（严格按症状判断）=====
@@ -541,7 +542,7 @@ ls "$HOME/Library/pnpm/global/5/node_modules/openclaw/" 2>/dev/null | head -5
 | `No API key found for amazon-bedrock` | gateway plist 没注入 AWS env（pi-ai 只读进程 env，不读 openclaw.json.env.vars） | 给 plist 的 `EnvironmentVariables` 加 AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY / AWS_REGION；bootout+bootstrap 重载 |
 | `reason=auth candidate=...claude-opus-4-6-v1` | 旧 inference profile 下线 | openclaw.json 里所有 `model.primary` / `imageModel.primary` / 子 agent `model` 更新到 `global.anthropic.claude-opus-4-7` / `global.anthropic.claude-sonnet-4-6` / `global.anthropic.claude-haiku-4-5-20251001-v1:0` |
 | `Invalid config ... Unrecognized key` | 升级后字段被移除 | `openclaw doctor --fix`，仍报则手动删 cliBackends / talk.voiceId / feishu 旧 streaming 标量等 |
-| `discord: Max reconnect attempts` + ETIMEDOUT/ECONNRESET | 防火墙/fake-ip，ws 不读 env 代理 | openclaw.json 里设 `channels.discord.proxy: "http://127.0.0.1:7897"` + `channels.telegram.proxy` 同上，重启 gateway |
+| `discord: Max reconnect attempts` + ETIMEDOUT/ECONNRESET（若用户启用了 Discord） | 防火墙/fake-ip，ws 不读 env 代理 | openclaw.json 里设 `channels.discord.proxy: "http://127.0.0.1:<Step 1g 实测可达端口>"`，`channels.telegram.proxy` 同理，重启 gateway |
 | Gateway plist 里写着 `openclaw@旧版本` | 升级后没重注册 | `openclaw daemon install --force` + `openclaw node install --force` |
 | `Invalid JSON` | openclaw.json 手改坏了 | 从 `openclaw.json.bak*` 或 git 恢复；没备份就报告不要瞎改 |
 | LaunchAgent 非 0 退出 | 具体 bug | 先看对应 .err.log 定位 |
@@ -574,7 +575,7 @@ ls "$HOME/Library/pnpm/global/5/node_modules/openclaw/" 2>/dev/null | head -5
 | 症状 | 根因 | 修复 |
 |-----|-----|------|
 | 所有 curl 都超时/reset 但代理端口可达 | 直连被拦，需走代理 | 环境变量只对 axios/undici 生效，Discord ws 需要 openclaw.json 里 `channels.*.proxy` |
-| 访问解析到 198.18.x.x 被 reset | Clash fake-ip 污染 | 配 `channels.discord.proxy` 让 ws 走代理，或 DoH 兜底 |
+| 访问解析到 198.18.x.x 被 reset | Clash fake-ip 污染 | 对应 channel 配 `proxy` 字段让 ws 走代理，或 DoH 兜底 |
 
 # ===== Step 3: 服务重启顺序（只在需要时执行）=====
 
@@ -585,7 +586,11 @@ pkill -f openclaw-gateway 2>/dev/null || true
 pkill -f openclaw-node 2>/dev/null || true
 sleep 1
 launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/ai.openclaw.gateway.plist
-sleep 3
+# 等 gateway ready（最多 15 秒）
+for i in $(seq 1 15); do
+  curl -s -o /dev/null -m 1 http://127.0.0.1:18789/ && break
+  sleep 1
+done
 launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/ai.openclaw.node.plist
 sleep 2
 curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:18789/
@@ -596,7 +601,10 @@ curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:18789/
 
 ```
 openclaw daemon status   # Runtime: running, RPC probe: ok
-openclaw agent --agent main -m "say hi in 3 words" --timeout 60   # 必须能返回文本
+# 取第一个 agent 名跑 smoke test（用户可能改过名字）
+AGENT=$(openclaw agent list 2>/dev/null | awk "NR==2{print \$1}")
+AGENT=${AGENT:-main}
+openclaw agent --agent "$AGENT" -m "say hi in 3 words" --timeout 60
 ```
 
 `doctor ok ≠ agent ok`。agent 测试失败就继续回到 Step 2 找下一个根因。
@@ -623,7 +631,7 @@ openclaw agent --agent main -m "say hi in 3 words" --timeout 60   # 必须能返
 
 开始执行。'
 
-claude --dangerously-skip-permissions -p "$REPAIR_PROMPT" --output-format text 2>&1
+claude --dangerously-skip-permissions --max-turns 50 -p "$REPAIR_PROMPT" --output-format text 2>&1 || true
 
 echo -e "\n${GREEN}${BOLD}AI 诊断完成${NC}"
 echo -e "如仍有问题请提 issue 附上本次输出: ${CYAN}https://github.com/cncoder/oneclaw/issues${NC}\n"
