@@ -43,11 +43,3 @@ ffmpeg -i podcast.mp3 -b:a 64k podcast_compressed.mp3
 
 Qwen3-TTS 8bit 模型占用约 1.2GB 统一内存。如果同时运行其他大模型（如 Stable Diffusion），可能触发 OOM。关闭其他模型后重试。
 
-## 模型下载慢
-
-HuggingFace 直连慢时用镜像：
-
-```bash
-export HF_ENDPOINT=https://hf-mirror.com
-python3.12 $SKILL/one_shot.py "测试"
-```

@@ -221,7 +221,6 @@ python3.12 $SKILL/publish_to_cdn.py publish \
 | 音频质量差 | 确认无并行 TTS（`ps aux \| grep python3.12`） |
 | python3.12 找不到 | `brew install python@3.12` |
 | ffmpeg 找不到 | `brew install ffmpeg` |
-| 模型下载慢 | `export HF_ENDPOINT=https://hf-mirror.com` 设置镜像 |
 | MP3 太大发不出去 | `ffmpeg -i podcast.mp3 -b:a 64k compressed.mp3` |
 
 更多见 `references/troubleshooting.md`。
