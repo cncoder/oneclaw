@@ -1,0 +1,6 @@
+
+# Podcast generator outputs & cache (added 2026-04-30)
+skills/podcast-generator/output/
+skills/podcast-generator/tts_cache/
+output/
+tts_cache/

@@ -15,6 +15,10 @@ from pathlib import Path
 from .config import TTSConfig, VoiceConfig
 
 # Persistent worker script: loads model once, processes tasks via stdin/stdout JSON
+from .backends import get_worker_script as _get_worker_script
+
+# Legacy placeholder kept for any direct reference; actual script is selected
+# dynamically by backend (mlx or torch) via _write_worker_script below.
 _WORKER_SCRIPT = r'''
 import sys, json, time, os
 
@@ -211,9 +215,13 @@ def _cache_put(voice_name: str, text: str, wav_path: Path, cache_dir: Path | Non
 # ── Process-isolated worker management ────────────────────────────────
 
 def _write_worker_script(tmp: Path) -> Path:
-    """Write persistent worker script to temp dir."""
+    """Write persistent worker script to temp dir.
+
+    Worker source is selected by backend (mlx for Apple Silicon,
+    torch for everything else). Override with env TTS_BACKEND=mlx|torch.
+    """
     worker = tmp / "_tts_worker.py"
-    worker.write_text(_WORKER_SCRIPT)
+    worker.write_text(_get_worker_script())
     return worker
 
 

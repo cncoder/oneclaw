@@ -33,12 +33,21 @@ from loqui_tts.config import VoiceConfig
 # CUSTOMIZE THESE for your podcast
 # ═══════════════════════════════════════════════════════════════════════
 
-# TTS model — Qwen3-TTS 8bit recommended for quality/speed balance on Apple Silicon.
-# 4bit is faster but has audio jitter on long text (>200 chars).
-MODEL_ID = "mlx-community/Qwen3-TTS-12Hz-0.6B-Base-8bit"
+# TTS model — auto-selected per backend:
+#   mlx (Apple Silicon): mlx-community/Qwen3-TTS-12Hz-0.6B-Base-8bit
+#   torch (Linux x86_64): Qwen/Qwen3-TTS-12Hz-0.6B-Base (CPU or CUDA)
+# Override via env TTS_MODEL_ID if you want a different size/quantization.
+from loqui_tts.backends import get_default_model_id, detect_backend
+
+import os as _os
+MODEL_ID = _os.environ.get("TTS_MODEL_ID") or get_default_model_id()
 
 # ASR model for quality back-check (optional, set empty to disable)
-ASR_MODEL_ID = "mlx-community/Qwen3-ASR-0.6B-8bit"
+_DEFAULT_ASR = {
+    "mlx": "mlx-community/Qwen3-ASR-0.6B-8bit",
+    "torch": "Qwen/Qwen3-ASR-0.6B",
+}
+ASR_MODEL_ID = _os.environ.get("TTS_ASR_MODEL_ID") or _DEFAULT_ASR[detect_backend()]
 
 # Default voices directory
 DEFAULT_VOICES_DIR = Path(__file__).parent.parent / "assets" / "voices"

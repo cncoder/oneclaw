@@ -1,20 +1,26 @@
 ---
 name: podcast-generator
-description: "本地 AI 中文双人播客生成系统（Apple Silicon only）。主题一句话 → 自动调研 → 脚本 → TTS 合成 → 液体玻璃播放器 HTML。自带一男一女两位预制主持人声音，开箱即用。当用户提到播客、podcast、圆桌派、roundtable、做一期节目、生成音频、把文章变成语音、读一下这段话、有声书、做个音频节目时触发。"
+description: "本地 AI 中文双人播客生成系统（跨平台：Apple Silicon 原生 + Linux x86_64 云端）。主题一句话 → 自动调研 → 脚本 → TTS 合成 → 液体玻璃播放器 HTML。自带一男一女两位预制主持人声音，开箱即用。当用户提到播客、podcast、圆桌派、roundtable、做一期节目、生成音频、把文章变成语音、读一下这段话、有声书、做个音频节目时触发。"
 metadata:
   openclaw:
     emoji: "🎙️"
     requires:
-      bins: ["python3.12", "ffprobe", "ffmpeg"]
+      bins: ["ffprobe", "ffmpeg"]
 ---
 
 # Skill: podcast-generator
 
-> **⚠ Apple Silicon only (M1/M2/M3/M4)**。mlx-audio 绑定 Apple Metal GPU，不支持 Intel Mac / Linux / Windows / EC2（含 Graviton ARM）/ WSL。
-> 首项 doctor 检查 `arch == arm64`，否则直接退出。
-> 云端/x86 场景请改用 ElevenLabs、Azure TTS、火山引擎 TTS 等 API，或 GPU 实例上的 XTTS / CosyVoice。
-
 中文双人对话式播客生成系统（圆桌派风格）。两位预制主持人交替发言，自动左右声道分离，一条命令出完整播客。
+
+## 平台支持
+
+| 平台 | 后端 | Voice Clone RTF | 一期 15min 播客 | 推荐度 |
+|---|---|---|---|---|
+| **Mac Apple Silicon** (M1/M2/M3/M4) | MLX | **~0.1-0.3x** | ~5 分钟 | ✅ 首选 |
+| **Linux x86_64 CPU** (c7i/c6i/m7i) | PyTorch CPU | **~2.6x** | ~39 分钟 | ✅ 云端首选 |
+| **Linux x86_64 GPU** (g5/g6 NVIDIA) | PyTorch CUDA | ~1.6x | ~24 分钟 | ⚠ 比 CPU 贵且慢（0.6B 模型 GPU 利用率低） |
+
+`doctor.py` 自动检测 arch → 选择后端。强制指定用 `export TTS_BACKEND=mlx|torch`。
 
 **能做什么：**
 - 给一个主题，自动调研 → 写稿 → 合成 MP3 → 生成单文件 HTML 播放器
@@ -22,20 +28,34 @@ metadata:
 - 断点续传（长播客不怕中断）
 - 可选一键发布到你自己的私有 CloudFront
 
-**性能参考（M4 芯片实测）：**
-- 首次下载 Qwen3-TTS MLX 8bit 量化模型 ~800MB（约 2-5 分钟），之后离线可用
-- 合成速率约 1:1（30 分钟音频 ≈ 30 分钟生成）
-- 中文语速约 387 字/分钟（5,800 字 ≈ 15 分钟）
-
 ## 前置安装（只做一次）
+
+### Mac (Apple Silicon) — MLX 后端
 
 ```bash
 pip3.12 install mlx mlx-audio numpy soundfile pydub pyloudnorm pyyaml boto3
 brew install ffmpeg python@3.12   # 已有可跳过
-
-# 定位 scripts 目录，选一条合适的导出
 export SKILL="<path-to>/podcast-generator/scripts"
 ```
+
+### Linux x86_64 (AL2023 / Ubuntu) — Torch 后端
+
+```bash
+# AL2023
+sudo dnf install -y git python3.11 python3.11-pip sox
+# ffmpeg（AL2023 默认源没有，用 static build 或 rpmfusion）
+sudo dnf install -y https://download1.rpmfusion.org/free/el/rpmfusion-free-release-9.noarch.rpm
+sudo dnf install -y --allowerasing ffmpeg
+
+# Python 包（qwen-tts 自带 torch 2.11 + transformers 4.57.3）
+pip3.11 install qwen-tts numpy soundfile pydub pyloudnorm pyyaml boto3
+
+export SKILL="<path-to>/podcast-generator/scripts"
+```
+
+首次运行会自动下载 `Qwen/Qwen3-TTS-12Hz-0.6B-Base`（~1.5GB）到 `~/.cache/huggingface/`。
+
+**推荐实例**：c7i.8xlarge（32 vCPU, 64GB, ~$1.43/hr），15 分钟播客约 39 分钟出音。不推荐 GPU 实例（实测比 CPU 更慢且更贵）。
 
 后续命令都用 `$SKILL/xxx.py` 引用。
 

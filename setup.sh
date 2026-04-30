@@ -180,6 +180,106 @@ echo -e "${NC}"
 [[ "$(uname)" == "Darwin" ]] || error "This script only runs on macOS."
 info "Detected: macOS $(sw_vers -productVersion) ($(uname -m))"
 
+# ============================================================================
+# Optional components — interactive toggle menu
+# ============================================================================
+# Defaults: all optional components OFF
+INSTALL_GHOSTTY=false
+
+# Each optional component: (variable_name  label  default)
+OPTIONAL_COMPONENTS=(
+    "INSTALL_GHOSTTY|Ghostty 终端配置（为 Claude Code 优化的字体/主题/快捷键）|false"
+)
+
+# Interactive menu: space to toggle, enter to confirm
+show_optional_menu() {
+    local num=${#OPTIONAL_COMPONENTS[@]}
+    # Parse into arrays
+    local -a vars=() labels=() states=()
+    for entry in "${OPTIONAL_COMPONENTS[@]}"; do
+        IFS='|' read -r var label default <<< "$entry"
+        vars+=("$var")
+        labels+=("$label")
+        states+=("$default")
+    done
+
+    echo ""
+    echo -e "${BOLD}可选组件（空格切换选择，回车确认）：${NC}"
+    echo ""
+
+    local current=0
+    # Hide cursor
+    tput civis 2>/dev/null || true
+
+    # Draw menu
+    draw_menu() {
+        # Move cursor up to redraw
+        for ((i=0; i<num; i++)); do
+            [ "$i" -gt 0 ] && printf "\033[A"
+        done
+        printf "\r"
+        for ((i=0; i<num; i++)); do
+            local marker="  "
+            [ "$current" -eq "$i" ] && marker="> "
+            local check="[ ]"
+            [ "${states[$i]}" = "true" ] && check="[✓]"
+            if [ "$current" -eq "$i" ]; then
+                printf "\033[K${CYAN}${marker}${check} ${labels[$i]}${NC}\n"
+            else
+                printf "\033[K${marker}${check} ${labels[$i]}\n"
+            fi
+        done
+    }
+
+    # Initial draw
+    for ((i=0; i<num; i++)); do
+        echo ""
+    done
+    draw_menu
+
+    # Read keys
+    while true; do
+        IFS= read -rsn1 key </dev/tty || true
+        case "$key" in
+            ' ')  # Space: toggle
+                if [ "${states[$current]}" = "true" ]; then
+                    states[$current]="false"
+                else
+                    states[$current]="true"
+                fi
+                draw_menu
+                ;;
+            '')   # Enter: confirm
+                break
+                ;;
+            $'\x1b')  # Arrow keys (escape sequence)
+                read -rsn2 arrow </dev/tty
+                case "$arrow" in
+                    '[A')  # Up
+                        ((current > 0)) && ((current--)) || true
+                        draw_menu
+                        ;;
+                    '[B')  # Down
+                        ((current < num-1)) && ((current++)) || true
+                        draw_menu
+                        ;;
+                esac
+                ;;
+        esac
+    done
+
+    # Restore cursor
+    tput cnorm 2>/dev/null || true
+
+    # Apply selections
+    for ((i=0; i<num; i++)); do
+        eval "${vars[$i]}=${states[$i]}"
+    done
+    echo ""
+}
+
+show_optional_menu
+
 echo ""
 echo -e "${YELLOW}${BOLD}提示：${NC}安装过程需要管理员权限（sudo），请先输入你的 Mac 登录密码。"
 echo -e "      密码输入时屏幕不会显示任何字符，输完按回车就行。"
@@ -360,11 +460,24 @@ else
             echo -e "  然后关闭终端重新打开，输入 ${GREEN}claude --version${NC} 验证。"
             exit 1
         fi
+
     else
         echo -e "${RED}Claude Code 安装失败。${NC}"
         echo -e "请手动运行: ${CYAN}curl -fsSL https://claude.ai/install.sh | bash${NC}"
         echo -e "安装完成后${BOLD}关闭终端重新打开${NC}，再重新运行本脚本。"
         exit 1
+    fi
+fi
+
+# Create symlink in /usr/local/bin so `claude` works in ANY shell without PATH config
+CLAUDE_REAL=$(command -v claude 2>/dev/null)
+if [ -z "$CLAUDE_REAL" ]; then
+    CLAUDE_DIR=$(find_claude 2>/dev/null) && CLAUDE_REAL="$CLAUDE_DIR/claude"
+fi
+if [ -n "$CLAUDE_REAL" ] && [ -x "$CLAUDE_REAL" ] && [ ! -e "/usr/local/bin/claude" ]; then
+    mkdir -p /usr/local/bin 2>/dev/null || true
+    if ln -sf "$CLAUDE_REAL" /usr/local/bin/claude 2>/dev/null; then
+        info "已创建 /usr/local/bin/claude → $CLAUDE_REAL（任何终端直接可用）"
     fi
 fi
 
@@ -2077,6 +2190,116 @@ ln -sf "repair.command" "$HOME/Documents/OneClaw/一键修复.command"
 success "Repair script created: ~/Documents/OneClaw/repair.command (一键修复)"
 
 # ============================================================================
+# Step 13: Optional — Ghostty terminal config
+# ============================================================================
+if [ "$INSTALL_GHOSTTY" = "true" ]; then
+    step 13 "配置 Ghostty 终端"
+
+    GHOSTTY_DIR="$HOME/.config/ghostty"
+    GHOSTTY_THEME_DIR="$GHOSTTY_DIR/themes"
+    mkdir -p "$GHOSTTY_THEME_DIR"
+
+    # Write optimized Ghostty config for Claude Code
+    cat > "$GHOSTTY_DIR/config" <<'GHOSTTY_EOF'
+# Ghostty config — optimized for Claude Code
+# https://ghostty.org/docs/config
+
+# Font
+font-family = JetBrains Mono
+font-size = 14
+
+# Theme — dark
+theme = catppuccin-mocha
+
+# Window
+window-decoration = true
+window-padding-x = 8
+window-padding-y = 4
+macos-titlebar-style = tabs
+
+# Performance
+gtk-single-instance = true
+
+# Shell integration — prompt jumping and semantic regions
+shell-integration = zsh
+shell-integration-features = cursor,sudo,title
+
+# Scrollback — Claude Code output can be very long
+scrollback-limit = 100000
+
+# Terminal type — best compatibility for SSH
+term = xterm-256color
+
+# Clipboard
+clipboard-read = allow
+clipboard-write = allow
+copy-on-select = clipboard
+
+# Mouse — reduce conflicts with Claude Code TUI
+mouse-hide-while-typing = true
+
+# Image support — Claude Code uses Kitty protocol for images
+image-storage-limit = 320000000
+
+# Cursor
+cursor-style = block
+cursor-style-blink = false
+
+# Window close protection — prevent accidental Claude Code kills
+confirm-close-surface = true
+
+# Notifications — task completion alerts
+desktop-notifications = true
+
+# Keybindings
+keybind = super+t=new_tab
+keybind = super+w=close_surface
+keybind = super+shift+left_bracket=previous_tab
+keybind = super+shift+right_bracket=next_tab
+
+# Fast scrolling for long Claude Code output
+keybind = super+shift+k=scroll_page_up
+keybind = super+shift+j=scroll_page_down
+keybind = super+home=scroll_to_top
+keybind = super+end=scroll_to_bottom
+
+# Jump between Claude Code responses
+keybind = ctrl+shift+up=jump_to_prompt:-1
+keybind = ctrl+shift+down=jump_to_prompt:1
+GHOSTTY_EOF
+
+    # Install catppuccin-mocha theme
+    cat > "$GHOSTTY_THEME_DIR/catppuccin-mocha" <<'THEME_EOF'
+palette = 0=#45475a
+palette = 1=#f38ba8
+palette = 2=#a6e3a1
+palette = 3=#f9e2af
+palette = 4=#89b4fa
+palette = 5=#f5c2e7
+palette = 6=#94e2d5
+palette = 7=#bac2de
+palette = 8=#585b70
+palette = 9=#f38ba8
+palette = 10=#a6e3a1
+palette = 11=#f9e2af
+palette = 12=#89b4fa
+palette = 13=#f5c2e7
+palette = 14=#94e2d5
+palette = 15=#a6adc8
+background = 1e1e2e
+foreground = cdd6f4
+cursor-color = f5e0dc
+cursor-text = 1e1e2e
+selection-background = 585b70
+selection-foreground = cdd6f4
+THEME_EOF
+
+    success "Ghostty 配置已写入 ~/.config/ghostty/config"
+    info "主题: catppuccin-mocha | 字体: JetBrains Mono 14px"
+    info "如果还没安装 Ghostty，可从 https://ghostty.org 下载"
+fi
+
+# ============================================================================
 # Done!
 # ============================================================================
 echo ""
@@ -2118,10 +2341,19 @@ echo -e "  ${GREEN}${BOLD}${GATEWAY_TOKEN}${NC}"
 echo ""
 
 
+# Make PATH available in the CURRENT shell immediately (no need to open a new terminal)
+export PATH="$HOME/.local/bin:$HOME/Library/pnpm:$HOME/.cargo/bin:$PATH"
+eval "$(fnm env 2>/dev/null)" || true
+hash -r 2>/dev/null || true
+
 echo -e "${YELLOW}${BOLD}接下来做什么：${NC}"
-echo -e "  1. 按 ${GREEN}Command + N${NC} 打开一个新的终端窗口（很重要！新窗口才能识别刚装的命令）"
-echo -e "  2. 在新窗口输入：${CYAN}claude${NC}  然后按回车"
-echo -e "  3. Claude Code 启动后，你可以用中文和它对话，让它帮你写代码、排查问题"
+if command -v claude >/dev/null 2>&1; then
+    echo -e "  直接在这个终端输入：${CYAN}claude${NC}  然后按回车"
+else
+    echo -e "  按 ${GREEN}Command + N${NC} 打开一个新的终端窗口"
+    echo -e "  在新窗口输入：${CYAN}claude${NC}  然后按回车"
+fi
+echo -e "  Claude Code 启动后，你可以用中文和它对话，让它帮你写代码、排查问题"
 echo ""
 echo -e "${BOLD}已装的 Claude Code Skills（放在 ~/.claude/skills/）：${NC}"
 echo -e "  coding-standards / security-review / python-patterns / frontend-patterns"
