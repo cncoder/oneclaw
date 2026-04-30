@@ -1,0 +1,4 @@
+__pycache__/
+*.pyc
+output/
+_tts_chunks/
