@@ -10,7 +10,9 @@ metadata:
 
 # Skill: podcast-generator
 
-> Apple Silicon only (M1/M2/M3/M4)。mlx 不支持 Intel Mac / Linux / Windows。
+> **⚠ Apple Silicon only (M1/M2/M3/M4)**。mlx-audio 绑定 Apple Metal GPU，不支持 Intel Mac / Linux / Windows / EC2（含 Graviton ARM）/ WSL。
+> 首项 doctor 检查 `arch == arm64`，否则直接退出。
+> 云端/x86 场景请改用 ElevenLabs、Azure TTS、火山引擎 TTS 等 API，或 GPU 实例上的 XTTS / CosyVoice。
 
 中文双人对话式播客生成系统（圆桌派风格）。两位预制主持人交替发言，自动左右声道分离，一条命令出完整播客。
 
