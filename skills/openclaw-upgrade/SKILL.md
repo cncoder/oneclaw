@@ -142,9 +142,19 @@ cd "$(brew --prefix)/lib/node_modules/@tobilu/qmd" && npm rebuild better-sqlite3
 
 **Do not skip this.** plists hardcode the OpenClaw version path — without re-registering, the daemon keeps running the old version.
 
+> ⚠️ **Gateway and node are two independent launchd services.** Both commands below are required — missing either one leaves that plist pointing at a deleted version path, and the corresponding service crash-loops silently (see Pitfall #11).
+
 ```bash
-openclaw daemon install --force
-openclaw node install --force
+openclaw daemon install --force   # refreshes ai.openclaw.gateway.plist
+openclaw node install --force     # refreshes ai.openclaw.node.plist
+
+# Immediately verify BOTH plists point at the new version
+grep "openclaw@" \
+  ~/Library/LaunchAgents/ai.openclaw.gateway.plist \
+  ~/Library/LaunchAgents/ai.openclaw.node.plist
+
+# Check node isn't already crash-looping on a stale path
+tail -5 ~/.openclaw/logs/node.err.log
 ```
 
 ## Phase 5.5: Agent smoke test
@@ -174,17 +184,23 @@ openclaw --version
 # 2. Gateway process running
 sleep 5 && pgrep -fl openclaw-gateway
 
-# 3. Plist points at new version
-grep "openclaw@" ~/Library/LaunchAgents/ai.openclaw.gateway.plist
+# 3. BOTH plists point at the new version (gateway + node)
+grep "openclaw@" \
+  ~/Library/LaunchAgents/ai.openclaw.gateway.plist \
+  ~/Library/LaunchAgents/ai.openclaw.node.plist
+# If either line still shows the old version, Phase 5 was incomplete
 
 # 4. launchd status
-launchctl list | grep openclaw    # exit codes 0, PIDs present
+launchctl list | grep openclaw    # both gateway AND node: exit codes 0, PIDs present
 
 # 5. Daemon status
 openclaw daemon status            # Runtime: running, RPC probe: ok
 
-# 6. Error log scan
+# 6. Error log scan — check BOTH logs (gateway ok ≠ node ok)
 tail -20 ~/.openclaw/logs/gateway.err.log | grep -iE "error|fatal|api key|bedrock"
+tail -20 ~/.openclaw/logs/node.err.log    | grep -iE "cannot find module|error|fatal"
+# A `Cannot find module '.../openclaw@<OLD_VERSION>/...'` line means the node plist
+# is still stale — re-run `openclaw node install --force`
 
 # 7. Channel connectivity
 openclaw doctor 2>&1 | grep -E "Discord|Telegram|Feishu"
@@ -217,6 +233,7 @@ openclaw --version
 8. **`postinstall @discordjs/opus` error** → can roll back the whole bundled-plugins install, breaking `tslog` and friends. See Phase 2.5.
 9. **Old Bedrock inference profiles** → `claude-opus-4-6-v1` etc. may be deprecated. Update every `model.primary` reference.
 10. **`doctor ok` ≠ agent ok** → Phase 5.5 smoke test is non-optional.
+11. **Gateway alive ≠ node alive** → `ai.openclaw.gateway` and `ai.openclaw.node` are two independent launchd services with independent plists. Running only `daemon install --force` (and skipping `node install --force`) leaves the node plist pointing at a deleted version path; the node host then `MODULE_NOT_FOUND` crash-loops forever. Symptoms: `openclaw --version` ok, `doctor` ok, but `node.err.log` explodes, launchd relaunches the process continuously, memory pressure builds until Jetsam starts killing apps or the kernel panics. Always re-register both services, always grep both plists, always tail `node.err.log` after upgrade.
 
 ---
 
