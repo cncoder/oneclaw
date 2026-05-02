@@ -10,7 +10,31 @@ metadata:
 
 # Skill: podcast-generator
 
-中文双人对话式播客生成系统（圆桌派风格）。两位预制主持人交替发言，自动左右声道分离，一条命令出完整播客。
+中文双人对话式播客生成系统（圆桌派风格）。两位预制主持人交替发言，自动左右声道分离。
+
+## 🎯 定位（重要）
+
+本 skill **专注于 TTS 合成 + HTML 播放器**。脚本生成由**调用方 AI**（OpenClaw / Claude Desktop / Cursor / ChatGPT Desktop 等）或**用户手边任意 LLM**（ChatGPT / Gemini / 通义千问 / Kimi / Minimax …）完成。
+
+👉 **推荐流程**（真正零配置）：
+
+1. 把 [`references/script-prompt.md`](references/script-prompt.md) 里的 prompt 丢给你的 AI，生成 `script.txt`
+2. 运行 `python3.12 $SKILL/one_shot.py --script script.txt "<主题>"` 跑 TTS+HTML
+
+👉 **可选自动模式**（本机配了 API key 才启用，优先级依次）：
+
+- `OPENAI_API_KEY`（+ 可选 `OPENAI_BASE_URL` / `OPENAI_MODEL`，兼容 DeepSeek / 通义 / Moonshot / 本地 vLLM / OpenClaw gateway 等）
+- `ANTHROPIC_API_KEY`（模型 `ANTHROPIC_MODEL`，默认 `claude-sonnet-4-5`）
+- `GEMINI_API_KEY`（模型 `GEMINI_MODEL`，默认 `gemini-2.0-flash`）
+- `claude` CLI（Claude Code，兜底，可能因参数兼容性失败）
+
+配了 key 的情况下：`one_shot.py "主题" --duration 15min` 一条命令全自动。
+
+👉 **Agent 后台模式**：在**非交互式**环境（CI / bot / 后台 agent）跑，加 `--agent-mode`。skill 会把待处理 prompt 写到 `output/.../pending_prompt_script.txt` 并以退出码 2 退出，由调用方 AI 处理完后用 `--script` 续跑，**绝不会卡死在 stdin**。
+
+---
+
+两位预制主持人交替发言，自动左右声道分离，一条命令出完整播客。
 
 ## 平台支持
 
@@ -74,12 +98,23 @@ open output/*/*/index.html
 
 输出：`output/YYYY-MM-DD/{slug}/{script.txt, podcast.mp3, index.html, metadata.json}`
 
-**LLM 后端**：本机装了 `claude` CLI（Claude Code）或设了 `ANTHROPIC_API_KEY` 即自动使用。都没有？脚本会打印 prompt 让你手动贴给任意 LLM（ChatGPT / Gemini / 通义），再贴回回答文件路径继续——不卡死。
+**LLM 后端优先级**（`--script` > auto-backends > 手动）：
+
+1. `--script <path>` — 直接用写好的脚本，完全跳过 LLM（最高优先级，推荐）
+2. `OPENAI_API_KEY` — OpenAI / OpenAI 兼容 endpoint（`OPENAI_BASE_URL` / `OPENAI_MODEL` 可覆盖）
+3. `ANTHROPIC_API_KEY` — Anthropic（`ANTHROPIC_MODEL` 默认 `claude-sonnet-4-5`）
+4. `GEMINI_API_KEY` — Google Gemini（`GEMINI_MODEL` 默认 `gemini-2.0-flash`）
+5. `claude` CLI（装了 Claude Code时兜底，可能因版本兼容性失败）
+6. 手动模式 — 仅 TTY 下启用；后台运行请用 `--agent-mode` 避免 stdin 死锁
+
+都没有？脚本不会悄悄卡死 — 要么用 `--script` 手工给稿，要么用 `--agent-mode` 把 prompt 写成文件让你的 AI 处理。
 
 ### 参数
 
 | 参数 | 选项 | 默认 |
 |------|------|------|
+| `--script` | 已写好的脚本文件路径，跳过所有 LLM 阶段 | — |
+| `--agent-mode` | 无本地 LLM 时写 pending_prompt.txt 并退出码 2（后台/agent 友好） | off |
 | `--duration` | `5min / 10min / 15min / 30min / 45min / 60min` | `15min` |
 | `--style` | `debate / deep_dive / casual / interview / tutorial` | `deep_dive` |
 | `--rebuild` | 复用已有 `script.txt`，只重跑 TTS/HTML | — |

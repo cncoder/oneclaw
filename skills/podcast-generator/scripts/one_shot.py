@@ -15,10 +15,21 @@ Usage:
     python3.12 one_shot.py "..." --skip-research          # skip web research
     python3.12 one_shot.py "..." --skip-tts --skip-html   # script only
 
-LLM backend priority:
-    1. claude CLI (if in PATH) — zero config
-    2. ANTHROPIC_API_KEY / OPENAI_API_KEY (stdin prompt, manual paste)
-    3. manual mode: print prompt, wait for user to paste script path
+LLM backend priority (first available wins):
+    1. --script <path>           → pre-written script, skip research+writing entirely
+    2. OPENAI_API_KEY            → OpenAI / OpenAI-compatible (DeepSeek, 通义, Moonshot, local, …)
+                                    via OPENAI_BASE_URL (default https://api.openai.com/v1)
+                                    and OPENAI_MODEL (default gpt-4o-mini)
+    3. ANTHROPIC_API_KEY         → Anthropic (model via ANTHROPIC_MODEL, default claude-sonnet-4-5)
+    4. GEMINI_API_KEY            → Google Gemini (model via GEMINI_MODEL, default gemini-2.0-flash)
+    5. claude CLI (in PATH)      → Claude Code in print mode
+    6. manual mode               → only if stdin isatty; otherwise bail out clean
+    7. --agent-mode              → writes prompt to pending_prompt.txt and exits with code 2,
+                                    letting the *calling* AI agent handle the LLM step.
+
+Recommended usage from an AI agent:
+    Let the agent write the script (see references/script-prompt.md), save it as script.txt,
+    then run:  one_shot.py --script script.txt "<topic>"
 """
 from __future__ import annotations
 
@@ -68,6 +79,84 @@ def _slug(topic: str, max_len: int = 40) -> str:
 
 # ── LLM backends ──────────────────────────────────────────────────────
 
+DEFAULT_OPENAI_BASE = "https://api.openai.com/v1"
+DEFAULT_OPENAI_MODEL = "gpt-4o-mini"
+DEFAULT_ANTHROPIC_MODEL = "claude-sonnet-4-5"
+DEFAULT_GEMINI_MODEL = "gemini-2.0-flash"
+
+
+def _call_openai_api(prompt: str, system: str = "") -> str | None:
+    """Call OpenAI or any OpenAI-compatible endpoint. Supports DeepSeek, Moonshot, 通义, vLLM, Ollama, etc.
+
+    Env:
+        OPENAI_API_KEY     required
+        OPENAI_BASE_URL    default https://api.openai.com/v1 (no trailing /chat/completions)
+        OPENAI_MODEL       default gpt-4o-mini
+    """
+    key = os.environ.get("OPENAI_API_KEY")
+    if not key:
+        return None
+    base = os.environ.get("OPENAI_BASE_URL", DEFAULT_OPENAI_BASE).rstrip("/")
+    model = os.environ.get("OPENAI_MODEL", DEFAULT_OPENAI_MODEL)
+    try:
+        import urllib.request
+        messages = []
+        if system:
+            messages.append({"role": "system", "content": system})
+        messages.append({"role": "user", "content": prompt})
+        body = json.dumps({
+            "model": model,
+            "messages": messages,
+            "max_tokens": 16000,
+        }).encode()
+        req = urllib.request.Request(
+            f"{base}/chat/completions",
+            data=body,
+            headers={
+                "Authorization": f"Bearer {key}",
+                "Content-Type": "application/json",
+            },
+        )
+        with urllib.request.urlopen(req, timeout=600) as resp:
+            data = json.loads(resp.read())
+        choices = data.get("choices", [])
+        if not choices:
+            return None
+        return (choices[0].get("message", {}).get("content") or "").strip() or None
+    except Exception as e:
+        print(f"    OpenAI-compat API 异常 ({base}, model={model}): {e}", file=sys.stderr)
+        return None
+
+
+def _call_gemini_api(prompt: str, system: str = "") -> str | None:
+    """Call Google Gemini via REST. Env: GEMINI_API_KEY, GEMINI_MODEL (default gemini-2.0-flash)."""
+    key = os.environ.get("GEMINI_API_KEY")
+    if not key:
+        return None
+    model = os.environ.get("GEMINI_MODEL", DEFAULT_GEMINI_MODEL)
+    try:
+        import urllib.request
+        contents = [{"role": "user", "parts": [{"text": prompt}]}]
+        payload = {"contents": contents}
+        if system:
+            payload["systemInstruction"] = {"parts": [{"text": system}]}
+        body = json.dumps(payload).encode()
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={key}"
+        req = urllib.request.Request(
+            url, data=body, headers={"Content-Type": "application/json"},
+        )
+        with urllib.request.urlopen(req, timeout=600) as resp:
+            data = json.loads(resp.read())
+        cands = data.get("candidates", [])
+        if not cands:
+            return None
+        parts = cands[0].get("content", {}).get("parts", [])
+        return "".join(p.get("text", "") for p in parts).strip() or None
+    except Exception as e:
+        print(f"    Gemini API 异常 (model={model}): {e}", file=sys.stderr)
+        return None
+
+
 def _call_claude_cli(prompt: str, timeout: int = 600) -> str | None:
     """Call claude CLI in print mode. Returns None if not available or fails."""
     claude = shutil.which("claude")
@@ -92,15 +181,16 @@ def _call_claude_cli(prompt: str, timeout: int = 600) -> str | None:
 
 
 def _call_anthropic_api(prompt: str, system: str = "") -> str | None:
-    """Call Anthropic API via ANTHROPIC_API_KEY if present."""
+    """Call Anthropic API via ANTHROPIC_API_KEY if present. Model via ANTHROPIC_MODEL env."""
     key = os.environ.get("ANTHROPIC_API_KEY")
     if not key:
         return None
+    model = os.environ.get("ANTHROPIC_MODEL", DEFAULT_ANTHROPIC_MODEL)
     try:
         import urllib.request
         import urllib.error
         body = json.dumps({
-            "model": "claude-sonnet-4-6",
+            "model": model,
             "max_tokens": 16000,
             "system": system or None,
             "messages": [{"role": "user", "content": prompt}],
@@ -123,24 +213,65 @@ def _call_anthropic_api(prompt: str, system: str = "") -> str | None:
         return None
 
 
+# Module-level state: agent-mode + output dir for pending_prompt.txt fallback.
+_AGENT_MODE = False
+_AGENT_PROMPT_DIR: Path | None = None
+
+
 def _llm(prompt: str, system: str = "", label: str = "llm") -> str | None:
-    """Try each LLM backend in order. Returns None if all fail."""
+    """Try each LLM backend in order. Returns None if all fail.
+
+    Order: OpenAI-compat → Anthropic → Gemini → claude CLI → interactive manual (TTY only)
+         → agent-mode fallback (writes pending_prompt.txt, caller handles).
+    """
     merged = f"{system}\n\n{prompt}" if system else prompt
-    # 1. claude CLI
-    out = _call_claude_cli(merged)
+
+    # 1. OpenAI-compatible (broadest coverage, works with DeepSeek/Moonshot/通义/OpenClaw gateway)
+    out = _call_openai_api(prompt, system)
     if out:
         return out
-    # 2. Anthropic API
+    # 2. Anthropic
     out = _call_anthropic_api(prompt, system)
     if out:
         return out
-    # 3. Manual fallback
+    # 3. Gemini
+    out = _call_gemini_api(prompt, system)
+    if out:
+        return out
+    # 4. claude CLI (flaky, last resort among auto backends)
+    out = _call_claude_cli(merged)
+    if out:
+        return out
+
+    # 5. Agent mode: write prompt to file, let caller handle it
+    if _AGENT_MODE and _AGENT_PROMPT_DIR is not None:
+        pending = _AGENT_PROMPT_DIR / f"pending_prompt_{label}.txt"
+        pending.write_text(merged, encoding="utf-8")
+        print(f"\n  ℹ [{label}] agent-mode：无本地 LLM。prompt 已写入")
+        print(f"     {pending}")
+        print(f"     请用你的 AI 处理该 prompt，把回答保存为 script.txt，然后运行：")
+        print(f"     one_shot.py --script script.txt \"<你的主题>\"")
+        return None
+
+    # 6. Manual interactive fallback (TTY required)
+    if not sys.stdin.isatty():
+        print(f"\n  ✗ [{label}] 无可用 LLM 且 stdin 不是 TTY（后台/CI/agent 场景）。", file=sys.stderr)
+        print(f"     推荐：让调用方 AI 按 references/script-prompt.md 写稿，", file=sys.stderr)
+        print(f"           再运行 one_shot.py --script <脚本路径> \"<主题>\"", file=sys.stderr)
+        print(f"     或配置以下任一环境变量：", file=sys.stderr)
+        print(f"           OPENAI_API_KEY / ANTHROPIC_API_KEY / GEMINI_API_KEY", file=sys.stderr)
+        print(f"     或使用  --agent-mode  让 skill 把 prompt 写到文件。", file=sys.stderr)
+        return None
+
     print(f"\n  ℹ [{label}] 无可用 LLM，转为手动模式。")
-    print(f"     把下方 prompt 贴给 Claude/ChatGPT，把回答保存到一个文件，路径贴回来：\n")
+    print(f"     把下方 prompt 贴给 Claude/ChatGPT/Gemini/通义，把回答保存到文件后贴路径：\n")
     print("─" * 60)
     print(merged)
     print("─" * 60)
-    resp_path = input("\n  >>> 回答所在的文件路径 (Enter 跳过): ").strip()
+    try:
+        resp_path = input("\n  >>> 回答所在的文件路径 (Enter 跳过): ").strip()
+    except EOFError:
+        return None
     if resp_path and Path(resp_path).exists():
         return Path(resp_path).read_text(encoding="utf-8").strip()
     return None
@@ -278,6 +409,11 @@ def run(args: argparse.Namespace) -> int:
 
     target_chars = DURATION_MAP.get(args.duration, 5800)
 
+    # Wire up agent-mode state so `_llm` can fall back to writing pending_prompt.txt
+    global _AGENT_MODE, _AGENT_PROMPT_DIR
+    _AGENT_MODE = bool(args.agent_mode)
+    _AGENT_PROMPT_DIR = out_dir
+
     print("=" * 60)
     print(f"  话题: {args.topic}")
     print(f"  风格: {args.style}  时长: {args.duration} (~{target_chars}字)")
@@ -287,6 +423,19 @@ def run(args: argparse.Namespace) -> int:
     script_path = out_dir / "script.txt"
     mp3_path = out_dir / "podcast.mp3"
     html_path = out_dir / "index.html"
+
+    # ── 0. Pre-written script shortcut ───────────────────────────
+    if args.script:
+        src = Path(args.script).expanduser()
+        if not src.exists():
+            _log_stage("script", "fail", f"--script 文件不存在: {src}")
+            return 4
+        if src.resolve() != script_path.resolve():
+            script_path.write_text(src.read_text(encoding="utf-8"), encoding="utf-8")
+        _log_stage("script", "ok", f"使用 --script: {src.name} → {script_path.name}")
+        # Skip research + generation for the rest of the pipeline
+        args.skip_research = True
+        args.rebuild = True
 
     # ── Doctor pre-check ─────────────────────────────────────────
     if not args.skip_doctor:
@@ -323,6 +472,11 @@ def run(args: argparse.Namespace) -> int:
         t0 = time.time()
         script = _gen_script(args.topic, target_chars, args.style, research_text)
         if not script:
+            if _AGENT_MODE:
+                _log_stage("script", "warn",
+                           "agent-mode: 已写 pending_prompt.txt，请 AI 处理后用 --script 续跑",
+                           elapsed=time.time() - t0)
+                return 2
             _log_stage("script", "fail", "LLM 未返回内容，退出", elapsed=time.time() - t0)
             return 3
         script, warns = _sanitize_script(script)
@@ -476,6 +630,11 @@ def main() -> int:
     ap.add_argument("--output-dir", default="", help="输出根目录（默认 ./output）")
     ap.add_argument("--rebuild", action="store_true",
                     help="复用已有 script.txt，跳过调研+脚本生成")
+    ap.add_argument("--script", default="",
+                    help="直接使用已写好的脚本文件（完全跳过 LLM 阶段），仅走 TTS+HTML")
+    ap.add_argument("--agent-mode", action="store_true",
+                    help="无本地 LLM 时不卡 stdin；把 prompt 写入 pending_prompt.txt，"
+                         "让调用方 AI 处理后用 --script 续跑")
     ap.add_argument("--skip-research", action="store_true")
     ap.add_argument("--skip-tts", action="store_true")
     ap.add_argument("--skip-html", action="store_true")
