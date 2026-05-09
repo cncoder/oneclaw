@@ -1,0 +1,40 @@
+{
+  "id": "browser-agent",
+  "name": "Browser Agent (computer_use + research_fetch)",
+  "description": "Registers two high-level browser tools: computer_use (Playwright + VLM loop for multi-step UI) and research_fetch (Trafilatura + Readability + VLM reconciled content extraction). Wraps the skills/computer-use/ and skills/research-fetch/ shell scripts.",
+  "activation": {
+    "onStartup": true
+  },
+  "contracts": {
+    "tools": [
+      "computer_use",
+      "research_fetch"
+    ]
+  },
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "computerUseScript": {
+        "type": "string",
+        "description": "Absolute path to computer-use run.sh (defaults to ~/.openclaw/workspace/skills/computer-use/run.sh)."
+      },
+      "researchFetchScript": {
+        "type": "string",
+        "description": "Absolute path to research-fetch run.sh (defaults to ~/.openclaw/workspace/skills/research-fetch/run.sh)."
+      },
+      "defaultMaxStepsComputerUse": {
+        "type": "number",
+        "description": "Default MAX_STEPS env for computer_use when not provided by the caller."
+      },
+      "timeoutSecondsComputerUse": {
+        "type": "number",
+        "description": "Hard timeout (seconds) for a computer_use invocation. Default 300."
+      },
+      "timeoutSecondsResearchFetch": {
+        "type": "number",
+        "description": "Hard timeout (seconds) for a research_fetch invocation. Default 180."
+      }
+    }
+  }
+}
