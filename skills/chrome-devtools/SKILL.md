@@ -18,10 +18,11 @@ Browser automation via Chrome DevTools Protocol. When Claude Code needs to inter
 
 | Task | Tool | Why |
 |------|------|-----|
-| Claude Code needs browser | **CDP** (this skill) | Direct MCP control |
+| Claude Code needs **interactive** browser (click/fill/nav) | **CDP** (this skill) | Direct MCP control |
+| Pure content extraction from a URL | [`research-fetch`](../research-fetch/SKILL.md) | 3-way reconciled (Trafilatura + Readability + VLM) → highest accuracy |
 | OpenClaw agent browsing | `browser` tool (built-in) | Managed by OpenClaw |
 | Static docs / simple pages | `web_fetch` | Faster, no browser needed |
-| JS-rendered / SPA pages | **CDP** | web_fetch can't execute JS |
+| JS-rendered / SPA pages | **CDP** (if you also need to act) / `research-fetch` (read-only) | Both handle JS |
 | Bot-blocked sites | **CDP** with logged-in profile | Real browser fingerprint |
 
 ---

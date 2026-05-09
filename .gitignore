@@ -4,3 +4,7 @@ skills/podcast-generator/output/
 skills/podcast-generator/tts_cache/
 output/
 tts_cache/
+
+# research-fetch runtime artifacts
+skills/research-fetch/.venv/
+skills/research-fetch/_llm_debug/

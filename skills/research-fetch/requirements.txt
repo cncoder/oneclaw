@@ -1,0 +1,6 @@
+trafilatura>=2.0.0
+playwright>=1.49.0
+openai>=1.50.0
+json-repair>=0.30.0
+html2text>=2024.2.26
+lxml_html_clean>=0.1.0
