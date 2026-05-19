@@ -41,7 +41,7 @@ class TTSConfig:
     max_tokens: int = 1024
     min_rms: float = 0.08
     max_audio_sec_per_char: float = 0.25
-    asr_similarity_threshold: float = 0.55
+    asr_similarity_threshold: float = 0.91  # 2026-05-19: Abel 要求工程级严格 (旧 0.55 太宽松)
     asr_model_id: str = ""
     voices: dict[str, VoiceConfig] = field(default_factory=dict)
     default_voice: str = ""
@@ -50,3 +50,6 @@ class TTSConfig:
     crossfade_ms: int = 200
     pink_noise_db: float | None = None
     mp3_bitrate: str = "192k"
+    # 2026-05-19: Abel 要求 EC2 双 chunk 并行 (GPU A10G 22GB 富余)
+    # 1=单 worker 串行 (兼容旧行为); 2=双 worker round-robin; 3+ 慎用 (OOM 风险)
+    parallel_workers: int = 1

@@ -343,7 +343,14 @@ def _synthesize_all(
 
     Quality checks: RMS, repetition detection, abnormal silence, ASR back-check.
     Breakpoint resume via persist_dir.
+
+    2026-05-19: 支持 cfg.parallel_workers > 1 — 启动多个 worker round-robin
+    分发 chunks，GPU 利用率提升 ~2x。EC2 A10G 22GB 可同时跑 2-3 个 model.
     """
+    parallel_workers = max(1, getattr(cfg, "parallel_workers", 1))
+    if parallel_workers > 1:
+        return _synthesize_all_parallel(dialogue, tmp, cfg, persist_dir, parallel_workers)
+
     worker_script = _write_worker_script(tmp)
     wav_files = []
     failed = 0
@@ -451,6 +458,169 @@ def _synthesize_all(
     print(f"[TTS] Synthesis done: {len(wav_files)}/{len(dialogue)} chunks"
           f"{f', {failed} failed' if failed else ''}")
     return wav_files
+
+
+def _synthesize_all_parallel(
+    dialogue: list[tuple[str, str]],
+    tmp: Path,
+    cfg: TTSConfig,
+    persist_dir: Path | None,
+    parallel_workers: int,
+) -> list[Path]:
+    """启动 N 个 _tts_worker.py 并发处理 chunks (round-robin via ThreadPoolExecutor).
+
+    2026-05-19: Abel 要求 EC2 GPU 双 chunk 并行,A10G 22GB 富余可承载.
+    每个 worker 独立 stdin/stdout,线程池分发 chunk,顺序保证 (索引由调用方维护).
+    """
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    import threading
+
+    worker_script = _write_worker_script(tmp)
+    wav_files: list[Path | None] = [None] * len(dialogue)
+    failed_count = 0
+    failed_lock = threading.Lock()
+
+    # Breakpoint resume tracking (shared, lock-protected)
+    progress_file: Path | None = None
+    completed: set[int] = set()
+    completed_lock = threading.Lock()
+    if persist_dir is not None:
+        persist_dir.mkdir(parents=True, exist_ok=True)
+        progress_file = persist_dir / "_progress.json"
+        if progress_file.exists():
+            try:
+                progress_data = json.loads(progress_file.read_text())
+                completed = set(progress_data.get("completed", []))
+                print(f"[TTS] Resuming: {len(completed)}/{len(dialogue)} chunks done")
+            except Exception:
+                completed = set()
+
+    print(f"[TTS] Starting {parallel_workers} parallel workers (loading model)...")
+    t_start = time.time()
+    workers: list[subprocess.Popen] = []
+    worker_locks: list[threading.Lock] = []
+    for w_idx in range(parallel_workers):
+        proc = _start_worker(worker_script, cfg)
+        workers.append(proc)
+        worker_locks.append(threading.Lock())
+        print(f"[TTS] Worker {w_idx+1}/{parallel_workers} ready ({time.time() - t_start:.1f}s)")
+
+    default_voice_cfg = cfg.voices.get(cfg.default_voice) if cfg.default_voice else None
+
+    def _process_one(idx: int, voice_name: str, chunk: str) -> tuple[int, Path | None]:
+        """单 chunk 处理 (在 thread pool 里跑). 返回 (idx, wav_path 或 None)."""
+        nonlocal failed_count
+        wav_dir = persist_dir if persist_dir is not None else tmp
+        wav_path = wav_dir / f"chunk_{idx}.wav"
+
+        # Resume: skip
+        with completed_lock:
+            if idx in completed and wav_path.exists():
+                print(f"  [TTS] chunk {idx}/{len(dialogue)} [{voice_name}]: done, skipping")
+                return idx, wav_path
+
+        # Cache hit
+        cached = _cache_get(voice_name, chunk, cfg.cache_dir)
+        if cached is not None:
+            shutil.copy2(cached, wav_path)
+            print(f"  [TTS] chunk {idx}/{len(dialogue)} [{voice_name}]: cache hit")
+            with completed_lock:
+                completed.add(idx)
+                if progress_file is not None:
+                    try:
+                        progress_file.write_text(json.dumps({"completed": sorted(completed)}))
+                    except Exception:
+                        pass
+            return idx, wav_path
+
+        voice_cfg = cfg.voices.get(voice_name, default_voice_cfg)
+        if voice_cfg is None:
+            print(f"  [TTS] chunk {idx}/{len(dialogue)} [{voice_name}]: no voice config, skipping")
+            with failed_lock:
+                failed_count += 1
+            return idx, None
+        voice_min_rms = voice_cfg.min_rms
+
+        # Round-robin: 每个 chunk 用 idx % N 的 worker (lock 保护 stdin/stdout)
+        w_idx = idx % parallel_workers
+        info = None
+        for attempt in range(cfg.max_retries):
+            with worker_locks[w_idx]:
+                proc = workers[w_idx]
+                if proc.poll() is not None:
+                    print(f"  [TTS] Worker {w_idx} died (rc={proc.returncode}), restarting...")
+                    workers[w_idx] = _start_worker(worker_script, cfg)
+                    proc = workers[w_idx]
+
+                info = _synthesize_chunk(proc, chunk, wav_path, idx, len(dialogue),
+                                         voice_name=voice_name, voice_cfg=voice_cfg, cfg=cfg)
+            # quality 检查 (不需要锁)
+            if info is None:
+                print(f"  [TTS] chunk {idx} [{voice_name}]: attempt {attempt+1} failed, retrying...")
+                continue
+            rms = info.get("rms", 0)
+            if rms < voice_min_rms:
+                print(f"  [TTS] chunk {idx} [{voice_name}]: RMS={rms:.3f} < {voice_min_rms}, retrying...")
+                continue
+            if info.get("repetition_detected"):
+                print(f"  [TTS] chunk {idx} [{voice_name}]: repetition, retrying...")
+                continue
+            if info.get("abnormal_silence"):
+                print(f"  [TTS] chunk {idx} [{voice_name}]: abnormal silence, retrying...")
+                continue
+            asr_sim = info.get("asr_similarity", 1.0)
+            if asr_sim < cfg.asr_similarity_threshold:
+                asr_text = info.get("asr_text", "")
+                print(f"  [TTS] chunk {idx} [{voice_name}]: ASR={asr_sim:.0%} < "
+                      f"{cfg.asr_similarity_threshold:.0%}, retrying... heard: '{asr_text[:50]}'")
+                continue
+            break
+
+        if info is not None:
+            _cache_put(voice_name, chunk, wav_path, cfg.cache_dir)
+            with completed_lock:
+                completed.add(idx)
+                if progress_file is not None:
+                    try:
+                        progress_file.write_text(json.dumps({"completed": sorted(completed)}))
+                    except Exception:
+                        pass
+            return idx, wav_path
+        else:
+            with failed_lock:
+                failed_count += 1
+            return idx, None
+
+    # 提交所有 chunks 到线程池
+    try:
+        with ThreadPoolExecutor(max_workers=parallel_workers) as pool:
+            futures = [
+                pool.submit(_process_one, i, voice_name, chunk)
+                for i, (voice_name, chunk) in enumerate(dialogue)
+            ]
+            for fut in as_completed(futures):
+                try:
+                    idx, wav_path = fut.result()
+                    if wav_path is not None:
+                        wav_files[idx] = wav_path
+                except Exception as exc:
+                    print(f"  [TTS] chunk future error: {exc}")
+    finally:
+        for proc in workers:
+            try:
+                proc.stdin.close()
+                proc.wait(timeout=10)
+            except Exception:
+                try:
+                    proc.kill()
+                except Exception:
+                    pass
+
+    final_files = [w for w in wav_files if w is not None]
+    print(f"[TTS] Parallel synthesis done ({parallel_workers}x workers): "
+          f"{len(final_files)}/{len(dialogue)} chunks"
+          f"{f', {failed_count} failed' if failed_count else ''}")
+    return final_files
 
 
 # ── Advanced Merge (crossfade + stereo pan + pink noise + LUFS) ──────

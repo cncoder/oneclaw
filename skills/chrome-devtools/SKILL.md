@@ -16,14 +16,25 @@ Browser automation via Chrome DevTools Protocol. When Claude Code needs to inter
 
 ## When to Use What
 
-| Task | Tool | Why |
-|------|------|-----|
-| Claude Code needs **interactive** browser (click/fill/nav) | **CDP** (this skill) | Direct MCP control |
-| Pure content extraction from a URL | [`research-fetch`](../research-fetch/SKILL.md) | 3-way reconciled (Trafilatura + Readability + VLM) → highest accuracy |
-| OpenClaw agent browsing | `browser` tool (built-in) | Managed by OpenClaw |
-| Static docs / simple pages | `web_fetch` | Faster, no browser needed |
-| JS-rendered / SPA pages | **CDP** (if you also need to act) / `research-fetch` (read-only) | Both handle JS |
-| Bot-blocked sites | **CDP** with logged-in profile | Real browser fingerprint |
+**Core principle: don't open a browser if an API / CLI exists. Each layer up costs 5-10× more.**
+
+| Level | Task | Tool | Why |
+|-------|------|------|-----|
+| **-1** | AWS operations | `aws` CLI | API > DOM manipulation |
+| **-1** | GitHub operations | `gh` CLI | Never browse github.com for PR/issue data |
+| **-1** | Library / API docs | `context7` MCP, `aws-documentation` MCP | Structured, authoritative |
+| **-1** | Feishu/Lark | `lark-*` skills (official API) | Stable, no auth dance |
+| **0** | Read already-cloned repo code | Local `grep` / `read` | Zero network IO |
+| **1** | Static HTML (SSR page, blog, docs) | `web_fetch` / `research-fetch` | Fastest, no browser |
+| **2** | Logged-in SPA (Lark, AWS Console, Gmail) | **CDP** (this skill) | Preserves user session |
+| **2** | Click/fill/nav a specific element | **CDP** | Deterministic, low-latency |
+| **2** | Performance trace / Lighthouse | **CDP** (`performance_start_trace`, `lighthouse_audit`) | Native protocol |
+| **3** | Multi-step exploratory task (5+ conditional steps) | `browser-use` Agent (optional) | Autonomous planning saves snapshot round-trips |
+| **3** | Bot-blocked sites (no login) | `browser-use` stealth mode | Fingerprint evasion |
+| test | Repeatable E2E (CI only) | Playwright | Keeps daily Chrome clean |
+| agent | OpenClaw agent browsing | `browser` tool (built-in) | Managed by OpenClaw |
+
+**Key insight**: CDP is the workhorse for logged-in interactive work. Use `browser-use` Agent only when step count is genuinely unknown and branches are many — otherwise CDP's explicit control is cheaper and more debuggable.
 
 ---
 
@@ -320,3 +331,6 @@ export NO_PROXY="localhost,127.0.0.1"
 | Snapshot returns empty tree | Page is a PDF or non-HTML content | Use `take_screenshot` instead, or `evaluate_script` |
 | `fill` doesn't work on dropdown | Element is a custom `<div>`, not `<select>` | Use `click` to open, then `click` to select option |
 | Lighthouse audit times out | Page is very slow or requires auth | Navigate and log in first, then run audit with `mode="snapshot"` |
+| `Could not connect to Chrome` / `Failed to fetch browser webSocket` | Chrome process died but port still bound | **Don't blindly `pkill`** — user may have unsaved work. Run `~/.claude/scripts/cdp-status.sh` first; only then `cdp-start.sh` (it handles safe restart + 15s health check) |
+| `Element uid "X_Y" not found on page N` | DOM mutated after snapshot (SPA, re-render) | Immediately re-run `take_snapshot` and use fresh UIDs. Never retry with stale UID |
+| Task needs 5+ conditional steps, CDP editing feels cumbersome | Wrong tool for the job | Consider `browser-use` Agent for autonomous multi-step tasks. CDP is for explicit control, Agent is for exploration |
