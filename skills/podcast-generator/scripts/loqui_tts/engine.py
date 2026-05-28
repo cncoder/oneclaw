@@ -239,7 +239,8 @@ def _start_worker(worker: Path, cfg: TTSConfig) -> subprocess.Popen:
         env=env,
     )
     t0 = time.time()
-    while time.time() - t0 < 120:
+    startup_timeout = int(os.environ.get("TTS_STARTUP_TIMEOUT", "300"))
+    while time.time() - t0 < startup_timeout:
         line = proc.stdout.readline()
         if not line:
             stderr = proc.stderr.read()
@@ -254,7 +255,7 @@ def _start_worker(worker: Path, cfg: TTSConfig) -> subprocess.Popen:
         except json.JSONDecodeError:
             continue
     proc.kill()
-    raise RuntimeError("Worker startup timeout (120s)")
+    raise RuntimeError(f"Worker startup timeout ({startup_timeout}s)")
 
 
 def _send_task(proc: subprocess.Popen, task: dict, timeout: float = 300) -> dict | None:
