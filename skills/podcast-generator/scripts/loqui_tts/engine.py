@@ -29,7 +29,7 @@ from mlx_audio.tts.utils import load_model
 SR = int(os.environ.get("TTS_SAMPLE_RATE", "24000"))
 SKIP_ASR = os.environ.get("TTS_SKIP_ASR") == "1"
 
-def trim_trailing_silence(audio, sr=SR, threshold=0.01, window_sec=0.5, keep_sec=0.3):
+def trim_trailing_silence(audio, sr=SR, threshold=0.006, window_sec=0.5, keep_sec=0.5):
     window = int(sr * window_sec)
     last_voice = len(audio)
     for i in range(len(audio) - window, 0, -window):
@@ -239,8 +239,7 @@ def _start_worker(worker: Path, cfg: TTSConfig) -> subprocess.Popen:
         env=env,
     )
     t0 = time.time()
-    startup_timeout = int(os.environ.get("TTS_STARTUP_TIMEOUT", "300"))
-    while time.time() - t0 < startup_timeout:
+    while time.time() - t0 < 120:
         line = proc.stdout.readline()
         if not line:
             stderr = proc.stderr.read()
@@ -255,7 +254,7 @@ def _start_worker(worker: Path, cfg: TTSConfig) -> subprocess.Popen:
         except json.JSONDecodeError:
             continue
     proc.kill()
-    raise RuntimeError(f"Worker startup timeout ({startup_timeout}s)")
+    raise RuntimeError("Worker startup timeout (120s)")
 
 
 def _send_task(proc: subprocess.Popen, task: dict, timeout: float = 300) -> dict | None:
@@ -733,6 +732,53 @@ def _safe_merge(
         _fallback_ffmpeg_concat(wav_files, concat_wav)
 
 
+
+def _smooth_micro_dropouts(stereo, sr, max_gap_ms=100, floor_ratio=0.08):
+    """卡带修复: 检测 <max_gap_ms 的瞬间能量骤降(Qwen-TTS生成时偶发的字间断点),
+    用相邻样本包络插值平滑填补, 消除'卡带/断续'听感。仅修短骤降, 不动正常句间停顿。"""
+    import numpy as np
+    mono = stereo.mean(axis=1) if stereo.ndim > 1 else stereo
+    win = int(sr * 0.02)
+    n = len(mono) // win
+    if n < 3:
+        return stereo
+    env = np.array([np.sqrt(np.mean(mono[i*win:(i+1)*win]**2)) for i in range(n)])
+    voiced = env[env > env.max() * 0.15]
+    if len(voiced) == 0:
+        return stereo
+    floor = float(np.median(voiced)) * floor_ratio
+    max_gap_frames = int(max_gap_ms / 20)
+    fixed = 0
+    i = 1
+    while i < len(env) - 1:
+        if env[i] < floor and env[i-1] >= floor:
+            j = i
+            while j < len(env) and env[j] < floor:
+                j += 1
+            gap = j - i
+            if gap <= max_gap_frames and j < len(env) and env[j] >= floor:
+                s0 = max(0, (i-1) * win)
+                s1 = min(len(mono), j * win)
+                left_amp = float(np.sqrt(np.mean(mono[max(0, s0-win):s0]**2))) if s0 >= win else floor
+                right_amp = float(np.sqrt(np.mean(mono[s1:s1+win]**2))) if s1+win <= len(mono) else floor
+                seg_len = s1 - s0
+                if seg_len > 0:
+                    ramp = np.linspace(left_amp, right_amp, seg_len).astype("float32")
+                    cur = float(np.sqrt(np.mean(mono[s0:s1]**2))) + 1e-6
+                    gain = np.clip(ramp / cur, 1.0, 4.0)
+                    if stereo.ndim > 1:
+                        for ch in range(stereo.shape[1]):
+                            stereo[s0:s1, ch] *= gain
+                    else:
+                        stereo[s0:s1] *= gain
+                    fixed += 1
+            i = j
+        else:
+            i += 1
+    if fixed:
+        print("  [Merge] 卡带修复: 平滑 %d 个微骤降" % fixed)
+    return np.clip(stereo, -1.0, 1.0)
+
 def _merge_chunks_advanced(
     wav_files: list[Path],
     dialogue: list[tuple[str, str]],
@@ -798,7 +844,12 @@ def _merge_chunks_advanced(
             needed_len = tail_start + len(next_audio)
             if needed_len > len(audio):
                 audio = np.pad(audio, (0, needed_len - len(audio)))
-            audio[tail_start:tail_start + len(next_audio)] += next_audio * 0.85
+            # 卡带修复: 叠加前给 next_audio 加 30ms 淡入, 降幅度 0.85->0.6, 避免音量突变顿挫
+            _fade_n = min(int(sr * 0.03), len(next_audio))
+            if _fade_n > 0:
+                next_audio = next_audio.copy()
+                next_audio[:_fade_n] *= np.linspace(0, 1, _fade_n, dtype="float32")
+            audio[tail_start:tail_start + len(next_audio)] += next_audio * 0.6
             audio = np.clip(audio, -1.0, 1.0)
             merged_parts.append((audio, voice))
             i += 2
@@ -815,6 +866,15 @@ def _merge_chunks_advanced(
     total_samples += breath_samples * max(0, len(merged_parts) - 1)
     stereo = np.zeros((total_samples + sr, 2), dtype="float32")
 
+    # 卡带修复(根因2+4): 不再用200ms硬重叠(在切秃边界叠语音=咔哒/浑浊),
+    # 改为 句间插入 gap_ms 静音停顿 + 仅 edge_fade_ms 轻淡入淡出消除边界毛刺。
+    gap_samples = int(sr * 0.12)        # 120ms 自然句间停顿
+    edge_fade = int(sr * 0.04)          # 40ms 边界淡变(只消毛刺, 不重叠语音)
+    # 重新计算总长: 各段全长 + 段间gap (不再减crossfade)
+    total_samples = sum(len(a) for a, _ in merged_parts)
+    total_samples += gap_samples * max(0, len(merged_parts) - 1)
+    stereo = np.zeros((total_samples + sr, 2), dtype="float32")
+
     pos = 0
     for idx, (audio, voice) in enumerate(merged_parts):
         if voice_pan and voice in voice_pan:
@@ -822,25 +882,22 @@ def _merge_chunks_advanced(
         else:
             left_gain = right_gain = 1.0
 
+        audio = audio.copy()
+        # 边界淡入淡出: 消除硬切产生的咔哒, 但不与相邻段重叠
+        ef = min(edge_fade, len(audio) // 2)
+        if ef > 0:
+            audio[:ef] *= np.linspace(0, 1, ef, dtype="float32")
+            audio[-ef:] *= np.linspace(1, 0, ef, dtype="float32")
+
         end = pos + len(audio)
         if end > len(stereo):
-            end = len(stereo)
-            audio = audio[:end - pos]
-
-        if idx > 0 and crossfade_samples > 0:
-            fade_len = min(crossfade_samples, len(audio))
-            fade_in = np.linspace(0, 1, fade_len, dtype="float32")
-            fade_out = np.linspace(1, 0, fade_len, dtype="float32")
-            stereo[pos:pos + fade_len, 0] *= fade_out
-            stereo[pos:pos + fade_len, 1] *= fade_out
-            audio[:fade_len] *= fade_in
-
+            end = len(stereo); audio = audio[:end - pos]
         stereo[pos:end, 0] += audio * left_gain
         stereo[pos:end, 1] += audio * right_gain
+        # 下一段从 当前段结束 + 静音gap 开始 (无重叠)
+        pos = end + (gap_samples if idx < len(merged_parts) - 1 else 0)
 
-        pos = end - crossfade_samples if idx < len(merged_parts) - 1 else end
-
-    stereo = stereo[:pos + crossfade_samples]
+    stereo = stereo[:pos]
 
     # Pink noise floor (disabled when pink_noise_db is None)
     if cfg.pink_noise_db is not None:
@@ -857,6 +914,7 @@ def _merge_chunks_advanced(
         stereo += pink
 
     stereo = np.clip(stereo, -1.0, 1.0)
+    stereo = _smooth_micro_dropouts(stereo, sr)
 
     # LUFS loudness normalization to -16 LUFS
     try:

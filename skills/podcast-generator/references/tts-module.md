@@ -20,7 +20,7 @@
 
 ## ASR 回检（可选）
 
-`--enable-asr` 开启。每个 chunk 合成后用 `mlx-community/Qwen3-ASR-0.6B-8bit` 转录回文字，与原文对比，相似度 < 55% 时重试。
+`--enable-asr` 开启。每个 chunk 合成后用 `Qwen/Qwen3-ASR-1.7B`（EC2 GPU bf16）转录回文字，与原文对比，相似度 < 0.95 时标记重试。长音频按 60-90s 分段转录再拼接（整篇直灌会吃满显存）。
 
 默认关闭，因为 Qwen3-ASR 对 TTS 合成音频存在幻觉，不如基于音频时长/RMS 的评分稳定。
 

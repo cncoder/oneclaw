@@ -260,15 +260,18 @@ python3.12 $SKILL/publish_to_cdn.py publish \
 | 组件 | 技术 |
 |------|------|
 | TTS 模型 | [`mlx-community/Qwen3-TTS-12Hz-0.6B-Base-8bit`](https://huggingface.co/mlx-community/Qwen3-TTS-12Hz-0.6B-Base-8bit) ~800MB |
-| ASR（可选） | [`mlx-community/Qwen3-ASR-0.6B-8bit`](https://huggingface.co/mlx-community/Qwen3-ASR-0.6B-8bit)，`--enable-asr` 开启 |
+| ASR 质检 | [`Qwen/Qwen3-ASR-1.7B`](https://huggingface.co/Qwen/Qwen3-ASR-1.7B)（EC2 GPU bf16，实测比 0.6B 更快更准），相似度阈值 0.95 |
+| 声学质检 | `_smooth_micro_dropouts` 后处理消除 TTS 微骤降（卡带），dropout/秒目标 <0.2 |
 | 推理框架 | [mlx-audio](https://github.com/ml-explore/mlx-audio)（Apple MLX，仅 Apple Silicon） |
 | 音频处理 | numpy + soundfile + pyloudnorm + ffmpeg |
 | Python | 3.12（mlx 依赖 3.12 C API，3.14 ABI 不兼容） |
 
 ## 重要约束
 
-- **TTS 必须串行**。并行会 GPU 争抢导致音频抖动。一期完成再做下一期。
-- **python3.14 不兼容**。必须 `python3.12`。
+- **TTS 必须串行**（同机）。并行会 GPU 争抢导致音频抖动。多机并行需各自独立实例。
+- **python3.14 不兼容**。必须 `python3.12`（本地 MLX）/ `python3.11`（EC2 GPU）。
+- **卡带修复**：Qwen-TTS 0.6B 会偶发 <100ms 字间微能量骤降（听感=卡带/断续）。`engine.py` 的 `_smooth_micro_dropouts` 在合并末尾用相邻包络插值平滑填补，实测 dropout/秒 0.54→0.19。
+- **ASR 长音频必须分段**（每 60-90s chunk 转录再拼接）。Qwen3-ASR-1.7B 单次转录整篇 20min 会吃满 21GB 显存。
 
 ## 故障排查
 
