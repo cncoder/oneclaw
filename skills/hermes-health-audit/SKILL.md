@@ -674,6 +674,10 @@ After running 7.1, output a pruning recommendation:
 
 ## Remaining Issues
 - [what needs manual decision]
+
+## ⚠️ 生效方式
+修改 config.yaml 后，必须执行 `/new` 开启新 session 才能生效。
+当前 session 仍使用旧配置（gateway 在 session 启动时读取 config）。
 ```
 
 ---
