@@ -6,16 +6,16 @@ description: "Full-stack Hermes Agent health audit: observability config, compre
 # Hermes Health Audit
 
 **Target: Hermes Agent (https://github.com/NousResearch/hermes-agent)**
-本 skill 专门审计和优化 Hermes Agent 的配置、行为和性能。所有路径、配置项、数据库 schema 均指 Hermes Agent，不涉及 Claude Code、OpenClaw 或其他 agent 框架。源码位置：安装后在 `~/.hermes/hermes-agent/`，或从 GitHub 获取。
+This skill audits and optimizes Hermes Agent's configuration, behavior, and performance. All paths, config fields, and DB schema refer to Hermes Agent only — not Claude Code, OpenClaw, or any other agent framework. Source code location: `~/.hermes/hermes-agent/` after installation, or clone from GitHub.
 
-**执行环境要求：**
-- 本 skill 应由 Hermes Agent 自身执行（或由了解 Hermes 目录结构的 agent 执行）
-- 所有 `~/.hermes/` 路径指向 Hermes Agent 的数据目录
-- SQLite 查询针对 `~/.hermes/state.db`（Hermes 的 session 存储）
-- 配置修改仅影响 `~/.hermes/config.yaml`（Hermes 的配置文件）
-- **绝不修改** Claude Code (`~/.claude/`)、OpenClaw (`~/.openclaw/`) 或其他 agent 的配置
+**Execution Requirements:**
+- This skill should be executed by Hermes Agent itself (or by an agent that understands Hermes directory structure)
+- All `~/.hermes/` paths point to Hermes Agent's data directory
+- SQLite queries target `~/.hermes/state.db` (Hermes session store)
+- Config changes only affect `~/.hermes/config.yaml` (Hermes config file)
+- **Never modify** Claude Code (`~/.claude/`), OpenClaw (`~/.openclaw/`), or other agent configs
 
-**后端：** AWS Bedrock Claude (us.anthropic.claude-opus-4-6-v1)，1M context window，免费无限量。所有优化方案以质量最优为目标，忽略成本。
+**Backend:** AWS Bedrock Claude (us.anthropic.claude-opus-4-6-v1), 1M context window, free unlimited. All optimization targets maximum quality, cost ignored.
 
 6-phase diagnostic covering observability, compression, consistency, invocation, overload detection, and session behavior analysis.
 
