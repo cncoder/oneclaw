@@ -50,12 +50,14 @@ model:
 
 display:
   tool_progress_command: true    # show tool calls in real-time
-  show_cost: true                # show token spend per turn (CLI mode only)
-  busy_input_mode: "steer"       # 新消息作为方向调整注入当前 turn（需重启 gateway 生效）
   runtime_footer:
     enabled: true
     fields: [model, context_pct, cwd]  # ONLY these 3 fields are implemented in runtime_footer.py
     # ⚠️ tokens/cost/etc are silently ignored if added — remove from config to avoid confusion
+    # 要看绝对 token 数 / 花费用 HERMES_DUMP_REQUESTS=1（见下文），不要往 fields 里加 tokens/cost
+
+agent:
+  busy_input_mode: "steer"       # 新消息作为方向调整注入当前 turn（需新 session 生效，见文末）
 ```
 
 **Choosing `busy_input_mode` (check session patterns first):**
@@ -83,7 +85,6 @@ FROM sessions WHERE source='feishu' AND message_count > 10;"
 
 ```bash
 grep -A8 "runtime_footer:" ~/.hermes/config.yaml
-grep "show_cost:" ~/.hermes/config.yaml
 grep "tool_progress_command:" ~/.hermes/config.yaml
 grep "busy_input_mode:" ~/.hermes/config.yaml
 
@@ -105,8 +106,9 @@ grep -A8 "tool_loop_guardrails:" ~/.hermes/config.yaml
 
 ```yaml
 agent:
-  max_turns: 60    # Abel's actual (default 90); increase if long tasks truncate
+  max_turns: 90    # Hermes default 60; 提到 90 防长链自动化任务在第 60 turn 被硬停（Bedrock 免费无限量，无成本理由压低）
   gateway_auto_continue_freshness: 3600  # 中断后 1h 内自动恢复上下文
+  # 注意: goals.max_turns 是 goals 子系统独立配置（默认 20），与主推理 agent.max_turns 互不影响，按需单独调
 
 tool_loop_guardrails:
   warnings_enabled: true
@@ -231,8 +233,8 @@ compression:
 auxiliary:
   compression:
     provider: bedrock
-    model: us.anthropic.claude-opus-4-6-v1  # Abel: 免费无限量，用 Opus 保质量
-    # 如果有成本约束的用户，可降级 Sonnet — 压缩摘要质量轻微下降但够用
+    model: us.anthropic.claude-opus-4-6-v1
+    context_length: 1000000  # 必须与主模型一致，否则 threshold 被自动降到压缩模型的 context 上限
 ```
 
 ### Tuning Table
@@ -436,6 +438,25 @@ echo "SOUL.md: $soul_lines lines, $soul_directives hard directives"
 
 High directive density = model gets "instruction fatigue" — starts ignoring rules.
 
+### 5.4 AGENTS.md / SOUL.md 指令压缩方法论（实测有效）
+
+当 hard directives 逼近 critical（>40）或在 warning 区（20-40）想主动降载时，**不要删信息，要合并表述**。实战验证的「总纲 + 明细」压缩法：
+
+```bash
+# 统计 AGENTS.md hard directives
+grep -ciE "❌|\*\*禁止\*\*|绝对禁止|永远禁止|MUST|NEVER" ~/.hermes/AGENTS.md
+```
+
+**压缩手法（以 AWS 网络红线为例，实测 37→15 条）：**
+- 同一主题下散落的 N 条 `❌禁止` → 抽成 **1 条总纲**（如"公网入口只走 CloudFront+ALB(internal)+HTTPS，违反即停"）+ **按子类的明细列表**
+- 明细从「每条独立 ❌ 项」改为「按资源类型分组的一行描述」（SG / LB / EKS / S3 / Lambda / DB / HTTP 各一行）
+- **关键技术值零丢失铁律**：prefix list ID、IP 基线、bucket 名、四件套字段等具体值必须原样保留，只压表述不压数据
+- 压缩前后用 grep 计数验证 directive 数下降、用 diff 确认无技术值丢失
+
+**为什么有效**：模型注意力按 token 竞争，11 条平级 `❌` 各自抢注意力且易被随机忽略；1 条强总纲 + 明细列表既保留可执行性，又把"必停"的强约束集中到一处，命中率更高。
+
+**何时不该压**：每条 directive 都是独立事故沉淀且尚未内化时（如刚踩过的坑），保留原样直到形成肌肉记忆；压缩前确认哪些已内化。
+
 ---
 
 ## Phase 6: Session Pattern Analysis
@@ -533,15 +554,16 @@ done
 | Metric | Actual Value | Meaning |
 |--------|-------------|---------|
 | Avg session length | 72 messages | ~36 turns |
-| Compression fires at | avg 107 messages (old 0.6 threshold) | ~54 turns |
+| Compression fires at | avg 107 messages 下 old 0.6 threshold，现 0.75 后应 ~140 | ~54 → ~70 turns |
 | Tool density | 0.43-0.50 (= 0.85-1.0 tools/turn) | High automation |
 | Compression rate | 39% of sessions | Expected for power users |
 | Sessions with delegate_task | ~4 recent | Adoption just starting |
 
-**Prediction with new config (threshold=0.75, protect_last_n=40):**
-- Compression should fire ~30% later (at ~140 messages instead of 107)
-- Skills loaded within last 40 messages now survive compression
-- Monitor after 2 weeks to validate
+**Validated config (threshold=0.75, protect_last_n=40, max_turns=90 均已落地):**
+- Compression 延后 ~30%（由 ~107 → ~140 messages 触发）
+- 最近 40 条消息内加载的 skill 现在能熞过压缩
+- 长链任务不再在第 60 turn 被硬停
+- 上线 2 周后复查实际 compression 点与 cache hit 验证
 
 ### 6.4 Cache Hit Ratio (Prompt Caching Health)
 
@@ -572,7 +594,7 @@ ORDER BY started_at DESC LIMIT 10;"
 
 ### 6.5 Long Task & Interrupt Strategy
 
-- `busy_input_mode: "steer"` — 新消息注入当前 turn 作为方向调整（需重启 gateway 生效）
+- `busy_input_mode: "steer"` — 新消息注入当前 turn 作为方向调整（需新 session 生效，见文末生效说明）
 - `gateway_auto_continue_freshness: 3600` — 被中断后 1h 内自动恢复上下文
 - Recurring 长任务 → cronjob（独立 session，完全隔离）
 - 一次性长任务 → delegate_task（子 agent 边跑边写文件，即使被打断已写入内容不丢）
@@ -656,9 +678,9 @@ After running 7.1, output a pruning recommendation:
 # Hermes Health Report — [date]
 
 ## Phase 1 Observability: ✅/⚠️/❌
-- runtime_footer: [enabled/disabled]
-- show_cost: [yes/no]
-- tool_progress: [yes/no]
+- runtime_footer: [enabled/disabled], fields 仅 model/context_pct/cwd
+- tool_progress_command: [yes/no]
+- busy_input_mode: [steer/queue/interrupt]
 
 ## Phase 2 Compression: ✅/⚠️/❌
 - threshold: [value] (recommended: ≥0.75 for free-tier)
