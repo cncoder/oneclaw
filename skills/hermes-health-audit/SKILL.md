@@ -5,8 +5,8 @@ description: "Full-stack Hermes Agent health audit: observability config, compre
 
 # Hermes Health Audit
 
-**Target: Hermes Agent (本地源码: ~/.hermes/hermes-agent/)**
-本 skill 专门审计和优化 Hermes Agent 的配置、行为和性能。所有路径、配置项、数据库 schema 均指 Hermes Agent，不涉及 Claude Code、OpenClaw 或其他 agent 框架。
+**Target: Hermes Agent (https://github.com/NousResearch/hermes-agent)**
+本 skill 专门审计和优化 Hermes Agent 的配置、行为和性能。所有路径、配置项、数据库 schema 均指 Hermes Agent，不涉及 Claude Code、OpenClaw 或其他 agent 框架。源码位置：安装后在 `~/.hermes/hermes-agent/`，或从 GitHub 获取。
 
 **执行环境要求：**
 - 本 skill 应由 Hermes Agent 自身执行（或由了解 Hermes 目录结构的 agent 执行）
