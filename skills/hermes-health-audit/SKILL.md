@@ -355,35 +355,31 @@ Based on common session patterns, these subagent types prevent interruption:
 | **Builder** | "写/创建/生成" + multi-file output | terminal, file | 30-180s |
 | **Deployer** | "部署/发布/推送" + infra changes | terminal, file | 60-300s |
 
-### 6.5 Auto-Delegation Rules
+### 6.5 Long Task Execution Strategy
 
-Add to SOUL.md to enable automatic subagent dispatch:
+**Hermes interrupt 传播机制**：用户发消息 → 父 agent interrupt → **传播到所有子 agent** → 子 agent 完成当前 tool 后终止。delegate_task **不能完全防打断**。
 
+**三层防护（按可靠性排序）**：
+
+| 层级 | 机制 | 抗中断 | 适合场景 |
+|------|------|--------|---------|
+| Cronjob | 独立 session，完全隔离 | ✅ 不可打断 | 定期审计、报告、监控 |
+| delegate_task | 子 agent 跑完当前 tool 再停 | ⚠️ 减少损失 | 一次性长任务，输出写文件 |
+| inline | 直接在主 turn 执行 | ❌ 立即被杀 | <3 tool calls 的快速任务 |
+
+**delegate_task 的真实价值**（不是"不会被打断"）：
+1. 子 agent 被中断时，已写入文件的内容不丢失（要求 incremental write）
+2. 结果以 1 条 summary 返回，vs inline 的 10+ tool results → 大幅减缓 context 膨胀
+3. 子 agent 如果在 interrupt 传播到达前已完成，结果正常返回
+
+**SOUL.md 建议配置**：
 ```markdown
-## Auto-Delegation Strategy
-
-Automatically use delegate_task (not inline execution) when ALL of:
-1. Task requires 5+ sequential tool calls with no user decision points
-2. Task is one of: audit/scan, research/compare, batch process, deploy
-3. User said "跑一下/帮我搞/全部做完" (execution intent, not discussion)
-
-When delegating:
-- Pass complete context (file paths, constraints, output location)
-- Use toolsets: ["terminal", "file"] for most tasks, add "web" for research
-- Write output to /tmp/ or specific path, then read back and summarize
-- If task might take >60s, tell user "已派 subagent，继续聊不会打断它"
+## 长任务执行策略
+- 预估 5+ tool calls 且无需用户决策 → delegate_task
+- Delegate 时告知用户："已派 subagent，你发消息可能打断它，建议等它跑完"
+- 输出写 /tmp/（即使被打断，已完成的文件不丢）
+- 定期/无人值守任务 → 用 cronjob，完全不可打断
 ```
-
-### 6.6 Compression Prevention via Delegation
-
-Key insight: subagent results return as a **single compact summary** instead of 10+ intermediate tool results. This dramatically reduces context growth.
-
-| Approach | Context cost | Interruption risk |
-|----------|-------------|-------------------|
-| Inline 10 tool calls | ~10 messages added | High (any user msg kills it) |
-| delegate_task | 1 summary message | Zero (subagent isolated) |
-
-**Rule of thumb**: Any task that would add >5 messages to context → delegate instead.
 
 ---
 
@@ -422,7 +418,7 @@ Key insight: subagent results return as a **single compact summary** instead of 
 - Avg session length: [N] messages
 - Compression rate: [N]% of sessions
 - Avg tool density: [N]
-- Recommended auto-delegate tasks: [list]
+- Long task strategy: cronjob for recurring / delegate for one-off
 
 ## Actions Taken
 - [what was fixed]
