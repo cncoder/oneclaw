@@ -1,6 +1,6 @@
 ---
-name: hermes-audit-sop
-description: "Full-stack Hermes Agent audit SOP: observability config, compression tuning, prompt/skill consistency, skill invocation diagnosis, system overload detection, and session pattern analysis with subagent recommendations. Use when skills stop triggering, model ignores loaded skill steps, context grows unexpectedly, sessions hit compression too often, long tasks get interrupted, or after editing any prompt/skill/config file."
+name: hermes-health-audit
+description: "Full-stack Hermes Agent health audit: observability config, compression tuning, prompt/skill consistency, skill invocation diagnosis, system overload detection, and session pattern analysis with subagent recommendations. Use when skills stop triggering, model ignores loaded skill steps, context grows unexpectedly, sessions hit compression too often, long tasks get interrupted, or after editing any prompt/skill/config file."
 ---
 
 # Hermes Health Audit
