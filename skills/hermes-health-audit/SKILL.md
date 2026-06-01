@@ -315,34 +315,78 @@ FROM sessions WHERE source='feishu' AND end_reason='compression';"
 ### 6.2 Tool Density Analysis
 
 ```bash
-# High-density sessions (tool_calls/messages > 0.8 = heavy automation)
+# Tool density = tool_calls / message_count
+# NOTE: message_count includes BOTH user AND assistant messages
+# So density 0.45 means ~0.9 tools per agent turn (healthy high-automation)
 sqlite3 ~/.hermes/state.db "
 SELECT id, message_count, tool_call_count,
-  round(cast(tool_call_count as real)/message_count, 2) as tool_density
+  round(cast(tool_call_count as real)/message_count, 2) as density,
+  round(cast(tool_call_count as real)/(message_count/2.0), 2) as tools_per_turn
 FROM sessions WHERE source='feishu' AND message_count > 20
-ORDER BY tool_density DESC LIMIT 10;"
+ORDER BY tools_per_turn DESC LIMIT 10;"
+
+# Density distribution (classify interruption patterns)
+sqlite3 ~/.hermes/state.db "
+SELECT
+  CASE
+    WHEN cast(tool_call_count as real)/message_count < 0.3 THEN 'very_low (<0.3) = frequent interrupts'
+    WHEN cast(tool_call_count as real)/message_count < 0.5 THEN 'normal (0.3-0.5) = standard usage'
+    WHEN cast(tool_call_count as real)/message_count >= 0.5 THEN 'high (>0.5) = deep automation'
+  END as category,
+  count(*) as sessions,
+  round(avg(message_count)) as avg_msgs
+FROM sessions WHERE source='feishu' AND message_count > 10
+GROUP BY category ORDER BY sessions DESC;"
 ```
 
-**Interpretation:**
-- tool_density > 0.8 → session is mostly automation (good candidate for subagent)
-- tool_density < 0.3 → mostly conversation (no delegation needed)
-- Sessions that hit compression with high tool density → subagent would have prevented compression
+**Interpretation (corrected for dual-count):**
+- `tools_per_turn` ≈ 0.85-1.0 → every agent response uses a tool (normal for power users)
+- `tools_per_turn` < 0.5 → many turns without tools = user sending messages faster than agent can execute
+- `density` 0.4-0.5 is the healthy baseline (NOT 0.8 — that would mean 1.6 tools per turn)
 
 ### 6.3 Interruption Pattern Detection
 
-The #1 issue: user sends message while agent is executing multi-tool chain → current turn killed.
+User sends message while agent executes multi-tool chain → current turn killed.
 
 ```bash
-# Sessions with many messages but relatively few tool calls = frequent interruptions
+# Compression timing analysis: when does compression typically fire?
+sqlite3 ~/.hermes/state.db "
+SELECT
+  min(message_count) as earliest,
+  round(avg(message_count)) as avg_point,
+  max(message_count) as latest
+FROM sessions WHERE source='feishu' AND end_reason='compression';"
+
+# Sessions with very low tool density = frequent interruptions
 sqlite3 ~/.hermes/state.db "
 SELECT id, message_count, tool_call_count,
-  round(cast(tool_call_count as real)/message_count*2, 2) as efficiency
-FROM sessions WHERE source='feishu' AND message_count > 50
-  AND cast(tool_call_count as real)/message_count < 0.4
+  round(cast(tool_call_count as real)/(message_count/2.0), 2) as tools_per_turn
+FROM sessions WHERE source='feishu' AND message_count > 30
+  AND cast(tool_call_count as real)/message_count < 0.3
 ORDER BY message_count DESC LIMIT 10;"
+
+# Check delegate_task usage in session JSONs
+ls -t ~/.hermes/sessions/session_*.json | head -20 | while read f; do
+  if grep -ql "delegate_task" "$f" 2>/dev/null; then
+    echo "HAS_DELEGATE: $(basename $f)"
+  fi
+done
 ```
 
-Low efficiency ratio = many turns were interrupted before tools completed.
+**Benchmark (from real data, Abel's 100+ feishu sessions):**
+
+| Metric | Actual Value | Meaning |
+|--------|-------------|---------|
+| Avg session length | 72 messages | ~36 turns |
+| Compression fires at | avg 107 messages (old 0.6 threshold) | ~54 turns |
+| Tool density | 0.43-0.50 (= 0.85-1.0 tools/turn) | High automation |
+| Compression rate | 39% of sessions | Expected for power users |
+| Sessions with delegate_task | ~4 recent | Adoption just starting |
+
+**Prediction with new config (threshold=0.75, protect_last_n=40):**
+- Compression should fire ~30% later (at ~140 messages instead of 107)
+- Skills loaded within last 40 messages now survive compression
+- Monitor after 2 weeks to validate
 
 ### 6.4 Recommended Subagent Profiles
 
