@@ -572,10 +572,10 @@ ORDER BY started_at DESC LIMIT 10;"
 
 ### 6.5 Long Task & Interrupt Strategy
 
-- `busy_input_mode: "queue"` — 根本性解决中断问题（消息排队而非杀 turn）
-- `gateway_auto_continue_freshness: 3600` — 被中断后 1h 内自动注入恢复 system note
+- `busy_input_mode: "steer"` — 新消息注入当前 turn 作为方向调整（需重启 gateway 生效）
+- `gateway_auto_continue_freshness: 3600` — 被中断后 1h 内自动恢复上下文
 - Recurring 长任务 → cronjob（独立 session，完全隔离）
-- 一次性长任务 → delegate_task（不防中断，但已写入文件不丢 + context 膨胀可控）
+- 一次性长任务 → delegate_task（子 agent 边跑边写文件，即使被打断已写入内容不丢）
 
 ---
 
@@ -686,7 +686,7 @@ After running 7.1, output a pruning recommendation:
 - Compression rate: [N]% of sessions
 - Avg tool density: [N]
 - Cache hit ratio: [N]%
-- busy_input_mode: [interrupt/queue/steer]
+- busy_input_mode: steer
 
 ## Phase 7 Skill Pruning: ✅/⚠️/❌
 - Never-loaded skills: [N]/[total]
