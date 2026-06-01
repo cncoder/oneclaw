@@ -46,15 +46,36 @@ Ensure diagnostic signals are visible before debugging anything else.
 display:
   tool_progress_command: true    # show tool calls in real-time
   show_cost: true                # show token spend per turn (CLI mode only)
-  busy_input_mode: "queue"       # interrupt | queue | steer
-    # interrupt(默认): 用户消息立即杀当前 turn
-    # queue: 消息排队，当前 turn 完成后处理（推荐自动化重度用户）
-    # steer: 新消息作为方向调整注入当前 turn
+  busy_input_mode: "steer"       # interrupt | queue | steer
+    # interrupt(default): user message kills current turn immediately
+    # queue: messages queued, processed after current turn completes
+    # steer: new message injected as direction adjustment into current turn
   runtime_footer:
     enabled: true
     fields: [model, context_pct, cwd]  # ONLY these 3 fields are valid
     # ⚠️ tokens/cost/etc are silently ignored — not implemented in runtime_footer.py
 ```
+
+**Choosing `busy_input_mode` (check session patterns first):**
+
+```bash
+# Analyze user behavior pattern to recommend busy_input_mode
+sqlite3 ~/.hermes/state.db "
+SELECT
+  count(*) as total_sessions,
+  round(avg(message_count)) as avg_msgs,
+  round(avg(tool_call_count)) as avg_tools,
+  round(avg(cast(tool_call_count as real)/(message_count/2.0)), 2) as avg_tools_per_turn
+FROM sessions WHERE source='feishu' AND message_count > 10;"
+```
+
+| User Pattern | Recommendation | Reason |
+|--------------|---------------|--------|
+| Sends follow-ups/corrections while agent works | **steer** | Message injected into current turn, agent adjusts mid-execution |
+| Heavy automation, rarely interrupts | **queue** | Turn completes safely, messages processed after |
+| Interactive chat, short tasks only | **interrupt** | Immediate response to new topic, no long tasks at risk |
+| tools_per_turn > 0.8 + frequent corrections | **steer** | High automation + mid-course corrections = steer sweet spot |
+| tools_per_turn > 0.8 + rarely sends mid-task | **queue** | Let long chains finish undisturbed |
 
 ### Verify
 
