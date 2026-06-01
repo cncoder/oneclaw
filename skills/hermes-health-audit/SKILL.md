@@ -32,10 +32,11 @@ Ensure diagnostic signals are visible before debugging anything else.
 ```yaml
 display:
   tool_progress_command: true    # show tool calls in real-time
-  show_cost: true                # show token spend per turn
+  show_cost: true                # show token spend per turn (CLI mode only)
   runtime_footer:
     enabled: true
-    fields: [model, context_pct, tokens, cost, cwd]
+    fields: [model, context_pct, cwd]  # ONLY these 3 fields are valid
+    # ⚠️ tokens/cost/etc are silently ignored — not implemented in runtime_footer.py
 ```
 
 ### Verify
@@ -44,6 +45,15 @@ display:
 grep -A8 "runtime_footer:" ~/.hermes/config.yaml
 grep "show_cost:" ~/.hermes/config.yaml
 grep "tool_progress_command:" ~/.hermes/config.yaml
+
+# Validate runtime_footer fields (only model/context_pct/cwd are valid)
+VALID_FIELDS="model context_pct cwd"
+CONFIGURED=$(grep -A5 "runtime_footer:" ~/.hermes/config.yaml | grep "fields:" | grep -oE '\[.*\]')
+for field in $(echo "$CONFIGURED" | tr -d '[],' ); do
+  if ! echo "$VALID_FIELDS" | grep -qw "$field"; then
+    echo "⚠️  Invalid runtime_footer field: '$field' (silently ignored)"
+  fi
+done
 ```
 
 ### Gateway vs CLI
@@ -148,6 +158,15 @@ compression:
   protect_last_n: 40       # keep last 40 messages intact
   protect_first_n: 3       # preserve early context
   hygiene_hard_message_limit: 400
+```
+
+**Auxiliary compression model:**
+```yaml
+auxiliary:
+  compression:
+    provider: bedrock
+    model: us.anthropic.claude-opus-4-6-v1  # Abel: 免费无限量，用 Opus 保质量
+    # 如果有成本约束的用户，可降级 Sonnet — 压缩摘要质量轻微下降但够用
 ```
 
 ### Tuning Table
@@ -458,7 +477,34 @@ done
 - Skills loaded within last 40 messages now survive compression
 - Monitor after 2 weeks to validate
 
-### 6.4 Recommended Subagent Profiles
+### 6.4 Cache Hit Ratio (Prompt Caching Health)
+
+```bash
+# Cache hit ratio = cache_read_tokens / (input_tokens + cache_read_tokens)
+# High ratio (>90%) = prompt caching working well, low marginal cost
+sqlite3 ~/.hermes/state.db "
+SELECT
+  round(sum(cache_read_tokens) * 100.0 / (sum(input_tokens) + sum(cache_read_tokens)), 1) as cache_hit_pct,
+  sum(input_tokens) as total_input,
+  sum(cache_read_tokens) as total_cache_read
+FROM sessions WHERE source='feishu' AND message_count > 5;"
+
+# Per-session cache efficiency (recent 10)
+sqlite3 ~/.hermes/state.db "
+SELECT id,
+  round(cache_read_tokens * 100.0 / nullif(input_tokens + cache_read_tokens, 0), 1) as cache_pct,
+  input_tokens, cache_read_tokens
+FROM sessions WHERE source='feishu' AND message_count > 10
+ORDER BY started_at DESC LIMIT 10;"
+```
+
+**Interpretation:**
+- Cache hit >95% → excellent (system prompt + early messages fully cached)
+- Cache hit 80-95% → normal (some cache misses on long sessions)
+- Cache hit <80% → investigate (config changes invalidating cache, or model switching mid-session)
+- Abel's baseline: >99% cache hit (system prompt dominates repeated calls)
+
+### 6.5 Recommended Subagent Profiles
 
 Based on common session patterns, these subagent types prevent interruption:
 
@@ -469,7 +515,7 @@ Based on common session patterns, these subagent types prevent interruption:
 | **Builder** | "写/创建/生成" + multi-file output | terminal, file | 30-180s |
 | **Deployer** | "部署/发布/推送" + infra changes | terminal, file | 60-300s |
 
-### 6.5 Long Task Execution Strategy
+### 6.6 Long Task Execution Strategy
 
 **Hermes Gateway 中断机制（vs Claude Code / OpenClaw）**：
 
