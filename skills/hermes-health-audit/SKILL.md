@@ -357,7 +357,21 @@ Based on common session patterns, these subagent types prevent interruption:
 
 ### 6.5 Long Task Execution Strategy
 
-**Hermes interrupt 传播机制**：用户发消息 → 父 agent interrupt → **传播到所有子 agent** → 子 agent 完成当前 tool 后终止。delegate_task **不能完全防打断**。
+**Hermes Gateway 中断机制（vs Claude Code / OpenClaw）**：
+
+| | Hermes Gateway | Claude Code / OpenClaw |
+|---|---|---|
+| **架构** | Request-response，每条消息 = 新 API call | 持久进程（tmux），stdin 是 stream |
+| **中断触发** | 用户发消息 → 立即终止当前 turn，tool call 被 cancel | 用户输入排队，agent 完成当前步骤后处理 |
+| **子 agent** | interrupt 传播到所有 child → 子 agent 完成当前 tool 后终止 | 无此问题，agent 自己决定何时 yield |
+| **恢复** | system note 提示"被打断"，但中间状态已丢失 | 无丢失，自然衔接 |
+| **根因** | Gateway 面向多平台（Telegram/Discord/飞书），期望"发消息立刻得到回应" | CLI 有明确"等待中"状态 |
+
+**代码实证**（`run_agent.py`）：
+- `AIAgent.interrupt()` 设 `_interrupt_requested=True` + `_set_interrupt(True, thread_id)`
+- 传播到 `_active_children` 列表中所有子 agent
+- 主循环在每次 API call 前、streaming event 间、tool 批次间检查 `_interrupt_requested`
+- delegate_task 工具文档明确写："if the parent is interrupted, the child is cancelled with status='interrupted' and its work is discarded"
 
 **三层防护（按可靠性排序）**：
 
