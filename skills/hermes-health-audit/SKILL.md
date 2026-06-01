@@ -106,7 +106,7 @@ grep -A8 "tool_loop_guardrails:" ~/.hermes/config.yaml
 
 ```yaml
 agent:
-  max_turns: 90    # Hermes default 60; 提到 90 防长链自动化任务在第 60 turn 被硬停（Bedrock 免费无限量，无成本理由压低）
+  max_turns: 120    # 免费无限量，给足空间跑长链路任务
   gateway_auto_continue_freshness: 3600  # 中断后 1h 内自动恢复上下文
   # 注意: goals.max_turns 是 goals 子系统独立配置（默认 20），与主推理 agent.max_turns 互不影响，按需单独调
 
@@ -559,7 +559,7 @@ done
 | Compression rate | 39% of sessions | Expected for power users |
 | Sessions with delegate_task | ~4 recent | Adoption just starting |
 
-**Validated config (threshold=0.75, protect_last_n=40, max_turns=90 均已落地):**
+**Validated config (threshold=0.75, protect_last_n=40, max_turns=120 均已落地):**
 - Compression 延后 ~30%（由 ~107 → ~140 messages 触发）
 - 最近 40 条消息内加载的 skill 现在能熞过压缩
 - 长链任务不再在第 60 turn 被硬停
