@@ -15,7 +15,7 @@ This skill audits and optimizes Hermes Agent's configuration, behavior, and perf
 - Config changes only affect `~/.hermes/config.yaml` (Hermes config file)
 - **Never modify** Claude Code (`~/.claude/`), OpenClaw (`~/.openclaw/`), or other agent configs
 
-**Backend:** AWS Bedrock Claude (us.anthropic.claude-opus-4-6-v1), 1M context window, free unlimited. All optimization targets maximum quality, cost ignored.
+**Backend:** AWS Bedrock Claude (us.anthropic.claude-opus-4-6-v1), 1M context window (requires explicit `context_length: 1000000` in config — Bedrock static table defaults to 200K, beta header `context-1m-2025-08-07` is sent but Hermes resolver needs the override), free unlimited. All optimization targets maximum quality, cost ignored.
 
 6-phase diagnostic covering observability, compression, consistency, invocation, overload detection, and session behavior analysis.
 
@@ -43,17 +43,19 @@ Ensure diagnostic signals are visible before debugging anything else.
 ### Required Config (`~/.hermes/config.yaml`)
 
 ```yaml
+model:
+  default: us.anthropic.claude-opus-4-6-v1
+  provider: bedrock
+  context_length: 1000000    # 必须显式设置！Bedrock 静态表默认 200K，此项覆盖为 1M
+
 display:
   tool_progress_command: true    # show tool calls in real-time
   show_cost: true                # show token spend per turn (CLI mode only)
-  busy_input_mode: "steer"       # interrupt | queue | steer
-    # interrupt(default): user message kills current turn immediately
-    # queue: messages queued, processed after current turn completes
-    # steer: new message injected as direction adjustment into current turn
+  busy_input_mode: "steer"       # 新消息作为方向调整注入当前 turn（需重启 gateway 生效）
   runtime_footer:
     enabled: true
-    fields: [model, context_pct, cwd]  # ONLY these 3 fields are valid
-    # ⚠️ tokens/cost/etc are silently ignored — not implemented in runtime_footer.py
+    fields: [model, context_pct, cwd]  # ONLY these 3 fields are implemented in runtime_footer.py
+    # ⚠️ tokens/cost/etc are silently ignored if added — remove from config to avoid confusion
 ```
 
 **Choosing `busy_input_mode` (check session patterns first):**
@@ -103,7 +105,7 @@ grep -A8 "tool_loop_guardrails:" ~/.hermes/config.yaml
 
 ```yaml
 agent:
-  max_turns: 90
+  max_turns: 60    # Abel's actual (default 90); increase if long tasks truncate
   gateway_auto_continue_freshness: 3600  # 中断后 1h 内自动恢复上下文
 
 tool_loop_guardrails:
@@ -217,10 +219,10 @@ Compression = #1 cause of "skill stops working after chatting".
 ```yaml
 compression:
   enabled: true
-  threshold: 0.75          # 75% of window (750K for 1M)
+  threshold: 0.75          # 75% of window (750K for 1M with context_length override)
   target_ratio: 0.2        # compress to 20%
   protect_last_n: 40       # keep last 40 messages intact
-  # protect_first_n: 硬编码=3，不可通过 config 配置
+  protect_first_n: 3       # configurable (default=3, range 3-5)
   hygiene_hard_message_limit: 400
 ```
 
@@ -259,7 +261,7 @@ sqlite3 ~/.hermes/state.db "SELECT id, input_tokens, cache_read_tokens, message_
 ```bash
 sqlite3 ~/.hermes/state.db "SELECT system_prompt FROM sessions ORDER BY started_at DESC LIMIT 1;" > /tmp/current_system_prompt.txt
 chars=$(wc -c < /tmp/current_system_prompt.txt)
-echo "≈ $((chars / 4)) tokens ($(( chars * 100 / 800000 ))% of 200K)"
+echo "≈ $((chars / 4)) tokens ($(( chars * 100 / 4000000 ))% of 1M)"
 ```
 
 ### 3.2 Conflict Detection Matrix
