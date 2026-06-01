@@ -50,9 +50,79 @@ grep "tool_progress_command:" ~/.hermes/config.yaml
 
 - `agent.verbose: true` → **CLI mode only**
 - Gateway hardcodes `verbose_logging=False` in `gateway/run.py`
-- For gateway DEBUG: `hermes gateway run -vv`
+- For gateway DEBUG: `hermes gateway run -v`
 - `runtime_footer` works in **both** modes
-- Full payload dump: `HERMES_DUMP_REQUEST_STDOUT=1 hermes chat`
+
+### 查看完整 Prompt / Context（Debug 必备）
+
+**方法 1：HERMES_DUMP_REQUESTS=1 — 每次 API 调用写完整 request 到文件**
+
+```bash
+HERMES_DUMP_REQUESTS=1 hermes gateway run
+```
+
+输出位置：`~/.hermes/sessions/request_dump_<session>_<timestamp>.json`
+
+文件内容结构：
+```json
+{
+  "timestamp": "...",
+  "session_id": "...",
+  "reason": "preflight|main_loop",
+  "request": {
+    "method": "POST",
+    "url": "...",
+    "body": {
+      "model": "us.anthropic.claude-opus-4-6-v1",
+      "system": "（完整 system prompt：SOUL.md + memory + skills index）",
+      "messages": [{"role":"user","content":"..."},  ...],
+      "tools": [...],
+      "max_tokens": 128000,
+      "thinking": {...}
+    }
+  }
+}
+```
+
+**方法 2：HERMES_DUMP_REQUEST_STDOUT=1 — 直接打到终端**
+
+```bash
+HERMES_DUMP_REQUEST_STDOUT=1 hermes chat 2>&1 | tee /tmp/hermes_dump.json
+```
+
+适合一次性调试，输出巨大建议 pipe 到文件。
+
+**方法 3：事后分析已有 dump**
+
+```bash
+# 列出所有 dump 文件
+ls -lt ~/.hermes/sessions/request_dump_*.json | head -5
+
+# 解析最新一条的 context 大小
+python3 -c "
+import json, sys, glob
+files = sorted(glob.glob('/Users/abel/.hermes/sessions/request_dump_*.json'))
+if not files: sys.exit('No dumps found')
+d = json.load(open(files[-1]))
+body = json.loads(d['request']['body']) if isinstance(d['request']['body'], str) else d['request']['body']
+sys_len = len(str(body.get('system', '')))
+msgs = body.get('messages', [])
+msg_chars = sum(len(str(m.get('content',''))) for m in msgs)
+tools_chars = len(json.dumps(body.get('tools', [])))
+print(f'System prompt: {sys_len:,} chars (~{sys_len//4:,} tokens)')
+print(f'Messages ({len(msgs)}): {msg_chars:,} chars (~{msg_chars//4:,} tokens)')
+print(f'Tools definition: {tools_chars:,} chars (~{tools_chars//4:,} tokens)')
+print(f'Total payload: ~{(sys_len+msg_chars+tools_chars)//4:,} tokens')
+print(f'Model: {body.get(\"model\")}')
+print(f'Max tokens: {body.get(\"max_tokens\")}')
+"
+```
+
+**注意事项：**
+- `runtime_footer` 的 `fields` 仅支持 `model`、`context_pct`、`cwd` 三个值，其他字段 silently ignored
+- `context_pct` 显示当前 token 占 context window 的百分比（实时）
+- 要看绝对 token 数必须用 dump request 方式
+- Dump 文件会累积，定期清理：`rm ~/.hermes/sessions/request_dump_*.json`
 
 ---
 
