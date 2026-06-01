@@ -5,6 +5,18 @@ description: "Full-stack Hermes Agent health audit: observability config, compre
 
 # Hermes Health Audit
 
+**Target: Hermes Agent (本地源码: ~/.hermes/hermes-agent/)**
+本 skill 专门审计和优化 Hermes Agent 的配置、行为和性能。所有路径、配置项、数据库 schema 均指 Hermes Agent，不涉及 Claude Code、OpenClaw 或其他 agent 框架。
+
+**执行环境要求：**
+- 本 skill 应由 Hermes Agent 自身执行（或由了解 Hermes 目录结构的 agent 执行）
+- 所有 `~/.hermes/` 路径指向 Hermes Agent 的数据目录
+- SQLite 查询针对 `~/.hermes/state.db`（Hermes 的 session 存储）
+- 配置修改仅影响 `~/.hermes/config.yaml`（Hermes 的配置文件）
+- **绝不修改** Claude Code (`~/.claude/`)、OpenClaw (`~/.openclaw/`) 或其他 agent 的配置
+
+**后端：** AWS Bedrock Claude (us.anthropic.claude-opus-4-6-v1)，1M context window，免费无限量。所有优化方案以质量最优为目标，忽略成本。
+
 6-phase diagnostic covering observability, compression, consistency, invocation, overload detection, and session behavior analysis.
 
 ## When to Use
@@ -16,6 +28,7 @@ description: "Full-stack Hermes Agent health audit: observability config, compre
 - After editing SOUL.md, skills, or config.yaml
 - Periodic health check (monthly recommended)
 - Onboarding a new teammate to Hermes
+- 其他 agent (Claude Code / OpenClaw) 需要对 Hermes 做优化时，作为 reference spec 使用
 
 ## Quick Start
 
@@ -33,6 +46,10 @@ Ensure diagnostic signals are visible before debugging anything else.
 display:
   tool_progress_command: true    # show tool calls in real-time
   show_cost: true                # show token spend per turn (CLI mode only)
+  busy_input_mode: "queue"       # interrupt | queue | steer
+    # interrupt(默认): 用户消息立即杀当前 turn
+    # queue: 消息排队，当前 turn 完成后处理（推荐自动化重度用户）
+    # steer: 新消息作为方向调整注入当前 turn
   runtime_footer:
     enabled: true
     fields: [model, context_pct, cwd]  # ONLY these 3 fields are valid
@@ -45,6 +62,7 @@ display:
 grep -A8 "runtime_footer:" ~/.hermes/config.yaml
 grep "show_cost:" ~/.hermes/config.yaml
 grep "tool_progress_command:" ~/.hermes/config.yaml
+grep "busy_input_mode:" ~/.hermes/config.yaml
 
 # Validate runtime_footer fields (only model/context_pct/cwd are valid)
 VALID_FIELDS="model context_pct cwd"
@@ -54,13 +72,36 @@ for field in $(echo "$CONFIGURED" | tr -d '[],' ); do
     echo "⚠️  Invalid runtime_footer field: '$field' (silently ignored)"
   fi
 done
+
+# Check critical agent settings
+grep "gateway_auto_continue_freshness" ~/.hermes/config.yaml
+grep -A8 "tool_loop_guardrails:" ~/.hermes/config.yaml
+```
+
+### Key Agent Settings (often missing from default config)
+
+```yaml
+agent:
+  max_turns: 90
+  gateway_auto_continue_freshness: 3600  # 中断后 1h 内自动恢复上下文
+
+tool_loop_guardrails:
+  warnings_enabled: true
+  hard_stop_enabled: true     # 防 agent 死循环（生产环境建议 true）
+  warn_after:
+    exact_failure: 2
+    same_tool_failure: 3
+    idempotent_no_progress: 2
+  hard_stop_after:
+    exact_failure: 5
+    same_tool_failure: 8
+    idempotent_no_progress: 5
 ```
 
 ### Gateway vs CLI
 
-- `agent.verbose: true` → **CLI mode only**
+- Verbose 通过 CLI flag: `hermes chat -v` 或 `hermes gateway run -v`（不是 config.yaml 字段）
 - Gateway hardcodes `verbose_logging=False` in `gateway/run.py`
-- For gateway DEBUG: `hermes gateway run -v`
 - `runtime_footer` works in **both** modes
 
 ### 查看完整 Prompt / Context（Debug 必备）
@@ -78,7 +119,7 @@ HERMES_DUMP_REQUESTS=1 hermes gateway run
 {
   "timestamp": "...",
   "session_id": "...",
-  "reason": "preflight|main_loop",
+  "reason": "preflight | non_retryable_client_error | max_retries_exhausted",
   "request": {
     "method": "POST",
     "url": "...",
@@ -142,7 +183,9 @@ Compression = #1 cause of "skill stops working after chatting".
 
 ### Root Cause Chain
 
-1. `skill_view()` loads content as **tool result message** in history
+1. `skill_view()` 在对话中被模型调用时，内容作为 **tool result message** 进入 history（可被压缩）
+   - 预加载 (`-s` flag) 的 skill 走 system prompt（永不压缩）
+   - `/skill-name` 斜杠命令作为 user message 注入
 2. Context hits threshold → compression summarizes old messages
 3. `protect_last_n` determines how many recent messages survive
 4. Skill loaded 30+ messages ago → summarized → steps lost
@@ -153,10 +196,10 @@ Compression = #1 cause of "skill stops working after chatting".
 ```yaml
 compression:
   enabled: true
-  threshold: 0.75          # 75% of window (150K for 200K)
+  threshold: 0.75          # 75% of window (750K for 1M)
   target_ratio: 0.2        # compress to 20%
   protect_last_n: 40       # keep last 40 messages intact
-  protect_first_n: 3       # preserve early context
+  # protect_first_n: 硬编码=3，不可通过 config 配置
   hygiene_hard_message_limit: 400
 ```
 
@@ -504,56 +547,83 @@ ORDER BY started_at DESC LIMIT 10;"
 - Cache hit <80% → investigate (config changes invalidating cache, or model switching mid-session)
 - Abel's baseline: >99% cache hit (system prompt dominates repeated calls)
 
-### 6.5 Recommended Subagent Profiles
+### 6.5 Long Task & Interrupt Strategy
 
-Based on common session patterns, these subagent types prevent interruption:
+- `busy_input_mode: "queue"` — 根本性解决中断问题（消息排队而非杀 turn）
+- `gateway_auto_continue_freshness: 3600` — 被中断后 1h 内自动注入恢复 system note
+- Recurring 长任务 → cronjob（独立 session，完全隔离）
+- 一次性长任务 → delegate_task（不防中断，但已写入文件不丢 + context 膨胀可控）
 
-| Profile | Trigger Condition | Toolsets | Typical Duration |
-|---------|------------------|----------|-----------------|
-| **Auditor** | "审计/扫描/检查" + >5 targets | terminal, file | 30-120s |
-| **Researcher** | "调研/对比/分析" + open-ended | web, browser, terminal | 60-300s |
-| **Builder** | "写/创建/生成" + multi-file output | terminal, file | 30-180s |
-| **Deployer** | "部署/发布/推送" + infra changes | terminal, file | 60-300s |
+---
 
-### 6.6 Long Task Execution Strategy
+## Phase 7: Skill Usage Analysis & Pruning
 
-**Hermes Gateway 中断机制（vs Claude Code / OpenClaw）**：
+Unused skills waste tokens in `available_skills` index (system prompt overhead).
 
-| | Hermes Gateway | Claude Code / OpenClaw |
-|---|---|---|
-| **架构** | Request-response，每条消息 = 新 API call | 持久进程（tmux），stdin 是 stream |
-| **中断触发** | 用户发消息 → 立即终止当前 turn，tool call 被 cancel | 用户输入排队，agent 完成当前步骤后处理 |
-| **子 agent** | interrupt 传播到所有 child → 子 agent 完成当前 tool 后终止 | 无此问题，agent 自己决定何时 yield |
-| **恢复** | system note 提示"被打断"，但中间状态已丢失 | 无丢失，自然衔接 |
-| **根因** | Gateway 面向多平台（Telegram/Discord/飞书），期望"发消息立刻得到回应" | CLI 有明确"等待中"状态 |
+### 7.1 Skill Load Frequency
 
-**代码实证**（`run_agent.py`）：
-- `AIAgent.interrupt()` 设 `_interrupt_requested=True` + `_set_interrupt(True, thread_id)`
-- 传播到 `_active_children` 列表中所有子 agent
-- 主循环在每次 API call 前、streaming event 间、tool 批次间检查 `_interrupt_requested`
-- delegate_task 工具文档明确写："if the parent is interrupted, the child is cancelled with status='interrupted' and its work is discarded"
+```bash
+# Scan last 100 session JSONs for skill_view tool calls
+python3 -c "
+import json, glob, os, re
+from collections import Counter
 
-**三层防护（按可靠性排序）**：
+skill_loads = Counter()
+files = sorted(glob.glob(os.path.expanduser('~/.hermes/sessions/session_*.json')), key=os.path.getmtime, reverse=True)[:100]
 
-| 层级 | 机制 | 抗中断 | 适合场景 |
-|------|------|--------|---------|
-| Cronjob | 独立 session，完全隔离 | ✅ 不可打断 | 定期审计、报告、监控 |
-| delegate_task | 子 agent 跑完当前 tool 再停 | ⚠️ 减少损失 | 一次性长任务，输出写文件 |
-| inline | 直接在主 turn 执行 | ❌ 立即被杀 | <3 tool calls 的快速任务 |
+for f in files:
+    try:
+        d = json.load(open(f))
+        content = json.dumps(d.get('messages', []))
+        # Match skill_view tool_use blocks
+        for m in re.finditer(r'skill_view.*?\"name\":\s*\"([^\"]+)\"', content):
+            name = m.group(1)
+            if name not in ('skill_view', 'skills_list', 'skill_manage'):
+                skill_loads[name] += 1
+    except: pass
 
-**delegate_task 的真实价值**（不是"不会被打断"）：
-1. 子 agent 被中断时，已写入文件的内容不丢失（要求 incremental write）
-2. 结果以 1 条 summary 返回，vs inline 的 10+ tool results → 大幅减缓 context 膨胀
-3. 子 agent 如果在 interrupt 传播到达前已完成，结果正常返回
+all_skills = set(os.path.basename(d.rstrip('/')) for d in glob.glob(os.path.expanduser('~/.hermes/skills/*/')))
+never = sorted(all_skills - set(skill_loads.keys()))
 
-**SOUL.md 建议配置**：
-```markdown
-## 长任务执行策略
-- 预估 5+ tool calls 且无需用户决策 → delegate_task
-- Delegate 时告知用户："已派 subagent，你发消息可能打断它，建议等它跑完"
-- 输出写 /tmp/（即使被打断，已完成的文件不丢）
-- 定期/无人值守任务 → 用 cronjob，完全不可打断
+print('=== Top loaded skills ===')
+for s, c in skill_loads.most_common(20):
+    print(f'  {c:3d}x  {s}')
+
+print(f'\n=== Never loaded ({len(never)}/{len(all_skills)} local skills) ===')
+for s in never:
+    path = os.path.expanduser(f'~/.hermes/skills/{s}/SKILL.md')
+    lines = len(open(path).readlines()) if os.path.exists(path) else 0
+    print(f'  {s} ({lines} lines)')
+"
 ```
+
+### 7.2 Pruning Criteria
+
+| Condition | Action |
+|-----------|--------|
+| Never loaded in 100+ sessions AND >100 lines | 🔴 Strong candidate for removal |
+| Never loaded but <50 lines | 🟡 Low overhead, keep unless >70 total skills |
+| Loaded 1-2x in 100 sessions | 🟡 Review — may be niche but legitimate |
+| Loaded 5+ times | 🟢 Active, keep |
+
+### 7.3 Removal Decision
+
+After running 7.1, output a pruning recommendation:
+
+```
+## Skill Pruning Recommendations
+
+### 🔴 Remove (never used, high overhead)
+- skill-name (N lines) — reason
+
+### 🟡 Consider removing (rarely used)
+- skill-name (N lines) — last used: session_XXX
+
+### 🟢 Keep (actively used)
+- skill-name (Nx in 100 sessions)
+```
+
+**Important**: Only remove skills from `~/.hermes/skills/` (local). Plugin-provided skills (openclaw-imports, etc.) are managed by the plugin system.
 
 ---
 
@@ -592,7 +662,12 @@ Based on common session patterns, these subagent types prevent interruption:
 - Avg session length: [N] messages
 - Compression rate: [N]% of sessions
 - Avg tool density: [N]
-- Long task strategy: cronjob for recurring / delegate for one-off
+- Cache hit ratio: [N]%
+- busy_input_mode: [interrupt/queue/steer]
+
+## Phase 7 Skill Pruning: ✅/⚠️/❌
+- Never-loaded skills: [N]/[total]
+- Recommended removals: [N] (saving ~[N] lines from index)
 
 ## Actions Taken
 - [what was fixed]
@@ -607,7 +682,7 @@ Based on common session patterns, these subagent types prevent interruption:
 
 ```bash
 # Monthly auto-audit with report to feishu
-hermes cron create --schedule "0 10 1 * *" \
-  --prompt "Load hermes-health-audit skill, run all 6 phases, output report" \
-  --skills hermes-health-audit
+hermes cron create "0 10 1 * *" \
+  "Load hermes-health-audit skill, run all 7 phases, output report" \
+  --skill hermes-health-audit
 ```
