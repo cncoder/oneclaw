@@ -7,6 +7,7 @@ notify = ["/Users/youruser/.codex/computer-use/Codex Computer Use.app/Contents/S
 personality = "pragmatic"
 model_reasoning_effort = "xhigh"
 sandbox_mode = "danger-full-access"
+model_auto_compact_token_limit = 220000
 
 [desktop]
 conversationDetailMode = "STEPS_COMMANDS"
