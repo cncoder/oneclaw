@@ -1,0 +1,105 @@
+model = "openai.gpt-5.5"
+model_provider = "amazon-bedrock"
+web_search = "disabled"
+approval_policy = "never"
+
+notify = ["/Users/youruser/.codex/computer-use/Codex Computer Use.app/Contents/SharedSupport/SkyComputerUseClient.app/Contents/MacOS/SkyComputerUseClient", "turn-ended"]
+personality = "pragmatic"
+model_reasoning_effort = "xhigh"
+sandbox_mode = "danger-full-access"
+
+[desktop]
+conversationDetailMode = "STEPS_COMMANDS"
+ambient-suggestions-enabled = true
+localeOverride = "zh-HK"
+preventSleepWhileRunning = true
+hotkey-window-projectless-default-enabled = true
+dictationDictionary = []
+show-context-window-usage = true
+
+[marketplaces.openai-primary-runtime]
+last_updated = "2026-06-02T04:34:28Z"
+source_type = "local"
+source = "/Users/youruser/.cache/codex-runtimes/codex-primary-runtime/plugins/openai-primary-runtime"
+
+[marketplaces.openai-bundled]
+last_updated = "2026-06-02T17:58:32Z"
+source_type = "local"
+source = "/Users/youruser/.codex/.tmp/bundled-marketplaces/openai-bundled"
+
+[plugins."documents@openai-primary-runtime"]
+enabled = true
+
+[plugins."spreadsheets@openai-primary-runtime"]
+enabled = true
+
+[plugins."presentations@openai-primary-runtime"]
+enabled = true
+
+[plugins."computer-use@openai-bundled"]
+enabled = true
+
+[plugins."browser@openai-bundled"]
+enabled = true
+
+[plugins."chrome@openai-bundled"]
+enabled = true
+
+[projects."/Users/youruser"]
+trust_level = "trusted"
+
+[projects."/Users/youruser/code/example-project"]
+trust_level = "trusted"
+
+[model_providers.amazon-bedrock.aws]
+region = "us-east-2"
+
+[features]
+js_repl = false
+memories = true
+
+[mcp_servers.chrome_devtools]
+command = "npx"
+args = ["-y", "chrome-devtools-mcp", "--browserUrl", "http://127.0.0.1:9222"]
+startup_timeout_sec = 60.0
+
+[mcp_servers.chrome_devtools.tools]
+
+[mcp_servers.chrome_devtools.tools.new_page]
+approval_mode = "approve"
+
+[mcp_servers.chrome_devtools.tools.take_snapshot]
+approval_mode = "approve"
+
+[mcp_servers.figma]
+url = "https://mcp.figma.com/mcp"
+
+[mcp_servers.lark]
+command = "python3"
+args = ["/Users/youruser/.openclaw/workspace/tools/lark-mcp-server.py"]
+startup_timeout_sec = 60.0
+
+[mcp_servers.node_repl]
+command = "/Applications/Codex.app/Contents/Resources/node_repl"
+startup_timeout_sec = 120.0
+
+[mcp_servers.node_repl.env]
+BROWSER_USE_AVAILABLE_BACKENDS = "chrome,iab"
+BROWSER_USE_CODEX_APP_BUILD_FLAVOR = "prod"
+CODEX_CLI_PATH = "/Applications/Codex.app/Contents/Resources/codex"
+CODEX_HOME = "/Users/youruser/.codex"
+NODE_REPL_INSTRUCTIONS_USE_CASE_BROWSER = "Control the in-app browser in conjunction with the Browser Plugin."
+NODE_REPL_INSTRUCTIONS_USE_CASE_CHROME = "Control the Chrome browser in conjunction with the Chrome Plugin. Prefer this method of controlling Chrome over alternatives (such as Computer Use) unless the user explicitly mentions an alternative."
+NODE_REPL_NATIVE_PIPE_CONNECT_TIMEOUT_MS = "1000"
+NODE_REPL_NODE_MODULE_DIRS = ""
+NODE_REPL_NODE_PATH = "/Applications/Codex.app/Contents/Resources/node"
+NODE_REPL_TRUSTED_BROWSER_CLIENT_SHA256S = "0b0d41e7a14a4903d2f95b0b3f427ed796b12c8edca2fa392a03df43997075ae"
+NODE_REPL_TRUSTED_CODE_PATHS = "/Users/youruser/.codex"
+SKY_CUA_SERVICE_PATH = "/Users/youruser/.codex/plugins/cache/openai-bundled/computer-use/1.0.799/Codex Computer Use.app"
+
+[memories]
+generate_memories = true
+use_memories = true
+
+[tui.model_availability_nux]
+"gpt-5.5" = 2
