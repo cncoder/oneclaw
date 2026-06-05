@@ -1,6 +1,6 @@
 # Claude Code Skills Collection
 
-10 battle-tested Skills covering the core Claude Code use cases — from browser automation to infrastructure ops.
+11 battle-tested Skills covering the core Claude Code use cases — from browser automation to infrastructure ops.
 
 ## Skill Catalog
 
@@ -16,6 +16,7 @@
 | Runbook | [`deep-research`](deep-research/) | Structured research: multi-source search, freshness filtering, cross-validation |
 | Infrastructure Ops | [`config-sync`](config-sync/) | CLAUDE.md contradiction detection, stale reference checks, audit reports |
 | Infrastructure Ops | [`openclaw-upgrade`](openclaw-upgrade/) | Upgrade OpenClaw: pre-flight, install, config migration, launchd re-register, smoke test, rollback |
+| Developer Experience | [`notification-hooks`](notification-hooks/) | Desktop notifications via Notification/Stop hooks — project name, what's waiting, click-to-focus, distinct sounds |
 
 **Bonus:** [`architecture-svg`](architecture-svg/) — Generate dark-theme SVG architecture diagrams for GitHub READMEs.
 
@@ -76,6 +77,10 @@ Generates professional dark-theme SVG architecture diagrams optimized for GitHub
 ### openclaw-upgrade
 
 Runbook for upgrading OpenClaw cleanly on macOS: pre-flight checks, pnpm install via proxy, config migration (breaking-change table), pnpm store cleanup, launchd re-registration, agent smoke test, and rollback. Includes a "Common Pitfalls" quick list — the 10 mistakes that block most upgrades.
+
+### notification-hooks
+
+Desktop notifications for Claude Code via `Notification` and `Stop` hooks. Pops a native macOS notification showing which project is waiting, what it's asking, and a distinct sound per event — plus click-to-focus back to your terminal. Includes the gotcha most people hit (whitelisting all tools silences `Notification`) and the verified Ghostty-vs-iTerm2 click-to-focus difference on Sequoia. Ships a terminal-aware `notify.sh`.
 
 ## License
 
