@@ -82,6 +82,14 @@ Runbook for upgrading OpenClaw cleanly on macOS: pre-flight checks, pnpm install
 
 Desktop notifications for Claude Code via `Notification` and `Stop` hooks. Pops a native macOS notification showing which project is waiting, what it's asking, and a distinct sound per event — plus click-to-focus back to your terminal. Includes the gotcha most people hit (whitelisting all tools silences `Notification`) and the verified Ghostty-vs-iTerm2 click-to-focus difference on Sequoia. Ships a terminal-aware `notify.sh`.
 
+### agentcore-deepsearch
+
+A deployable MCP server that does deep web research via AWS Bedrock AgentCore's managed cloud browser. **Three-tier fetch chain with a self-learning site policy**: local HTTP (free) → AWS cloud Chromium (anti-bot/JS/SPA) → **CDP to your local logged-in Chrome** for IP-walled closed sources (Reddit/X/Zhihu/etc. — verified: cloud/jina/API all 403, CDP gets through). `deep_search` is **breadth-first then depth** (returns a search overview of many sources + deep-fetched bodies). A self-regressive `site_policy.json` records which method works per domain and gets smarter every run. Ships `server.py` + `fetcher.py` + `cdp_fetch.py` + `site_policy.py` (bare stdio JSON-RPC) exposing 6 tools.
+
+### ai-search
+
+Drive your **logged-in Perplexity / Gemini** via CDP to get cited research reports directly — skip wiring up your own search+fetch. `ask.py {perplexity|gemini} "question"`. Two engines cross-check best. `--deep` (Gemini Deep Research) is **experimental**: it can start the research but can't auto-retrieve the report (Gemini runs it async in a separate view) — it leaves the report in your Chrome tab. For programmatic reports, prefer plain ai-search or agentcore-deepsearch.
+
 ## License
 
 MIT
