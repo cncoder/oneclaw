@@ -82,6 +82,10 @@ Runbook for upgrading OpenClaw cleanly on macOS: pre-flight checks, pnpm install
 
 Desktop notifications for Claude Code via `Notification` and `Stop` hooks. Pops a native macOS notification showing which project is waiting, what it's asking, and a distinct sound per event — plus click-to-focus back to your terminal. Includes the gotcha most people hit (whitelisting all tools silences `Notification`) and the verified Ghostty-vs-iTerm2 click-to-focus difference on Sequoia. Ships a terminal-aware `notify.sh`.
 
+### agentcore-deepsearch
+
+A deployable MCP server that does deep web research via AWS Bedrock AgentCore's managed cloud browser. Hybrid fetch: local HTTP first (free/fast), auto-upgrades to the cloud headless Chromium on anti-bot / JS-rendered / SPA pages. Ships runnable `server.py` + `fetcher.py` (bare stdio JSON-RPC, no MCP SDK needed) exposing 6 tools — `web_search` / `fetch_page` / `fetch_batch` / `deep_search` / `deep_search_multi` / `browser_status`. Reads the system browser ID from the SDK constant so it always tracks AWS's latest default instance.
+
 ## License
 
 MIT

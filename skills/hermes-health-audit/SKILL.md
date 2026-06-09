@@ -176,8 +176,8 @@ ls -lt ~/.hermes/sessions/request_dump_*.json | head -5
 
 # 解析最新一条的 context 大小
 python3 -c "
-import json, sys, glob
-files = sorted(glob.glob('/Users/abel/.hermes/sessions/request_dump_*.json'))
+import json, sys, glob, os
+files = sorted(glob.glob(os.path.expanduser('~/.hermes/sessions/request_dump_*.json')))
 if not files: sys.exit('No dumps found')
 d = json.load(open(files[-1]))
 body = json.loads(d['request']['body']) if isinstance(d['request']['body'], str) else d['request']['body']
@@ -669,6 +669,46 @@ After running 7.1, output a pruning recommendation:
 ```
 
 **Important**: Only remove skills from `~/.hermes/skills/` (local). Plugin-provided skills (openclaw-imports, etc.) are managed by the plugin system.
+
+---
+
+## Phase 8: Tool-Use & Delegation Tuning
+
+Four high-impact fixes from a real audit where a Claude-backed agent "felt passive" and sub-tasks were overpriced. Verify against your own setup; don't apply blind.
+
+### 8.1 Enforce tool use for Claude models
+
+`tool_use_enforcement: auto` only injects the "You MUST use your tools" steering for a hardcoded model list (`gpt/gemini/grok/qwen/...` in `agent/prompt_builder.py`) — **Claude/Opus/Sonnet are excluded**, so they narrate instead of acting and under-search.
+
+```yaml
+agent:
+  tool_use_enforcement: true   # was: auto (skips Claude) · false · [name-substrings]
+```
+Verify: restart, give a lookup task, confirm it calls a tool (compare web_search freq via Phase 6).
+
+### 8.2 Cheaper sub-agent model
+
+`delegation.model: ''` makes sub-agents **inherit the parent (Opus)** — grunt work (file scans, batch fetches) pays Opus prices.
+
+```yaml
+delegation:
+  model: us.anthropic.claude-sonnet-4-6   # was '' · provider '' inherits parent's
+```
+Main convo stays strong; only sub-tasks drop. **Gotcha:** a wrong model ID fails silently at delegation time, not config load — so prove it exists with a real `aws bedrock-runtime invoke-model` call first.
+
+### 8.3 Add deep-research depth
+
+Enforcement (8.1) fixes *willingness*, not *depth* — built-in `web_search` only returns snippets. Mount the `agentcore-deepsearch` skill (this repo) in `mcp_servers` (and CC's `~/.mcp.json`). Verify: `ps aux | grep agentcore-deepsearch/server.py`.
+
+### 8.4 Stale pointers after a prompt refactor
+
+Rules moved (e.g. AGENTS.md → SOUL.md) but memory still points at the old file → silent rule loss. Hermes only reliably loads SOUL.md; AGENTS.md loads only when cwd is the agent home (fails under cron).
+```bash
+grep -rniE "AGENTS\.md|以 .* 为准|回查 .*\.md" ~/.hermes/SOUL.md ~/.hermes/memories/ 2>/dev/null
+```
+Repoint stale refs; banner deprecated files with "DO NOT add rules here — moved to SOUL.md".
+
+> **Full reference config:** [`references/optimized-config.yaml`](references/optimized-config.yaml) — all of the above settings in one annotated `config.yaml`, each line noting why.
 
 ---
 

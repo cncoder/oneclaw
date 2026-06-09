@@ -1,0 +1,52 @@
+# Hermes Agent — optimized config reference (~/.hermes/config.yaml)
+# Curated from a real audit. Each line notes WHY. Bedrock + Claude example —
+# adapt model IDs / region to your backend. Verify before applying; don't paste blind.
+
+model:
+  default: us.anthropic.claude-opus-4-8   # strongest model for the main loop
+  provider: amazon-bedrock
+  context_length: 1000000                 # MUST set explicitly — Bedrock static table
+                                          # defaults to 200K even with the 1M beta header
+
+agent:
+  # Phase 8.1 — `auto` only injects "you MUST use your tools" steering for a hardcoded
+  # list (gpt/gemini/grok/qwen/...). Claude/Opus/Sonnet are excluded → they narrate
+  # instead of acting. Force it on so a Claude-backed agent actually calls tools.
+  tool_use_enforcement: true              # auto | true | false | [name-substrings]
+  max_turns: 120                          # high ceiling for long autonomous runs
+  task_completion_guidance: true          # "finish the job", model-agnostic
+
+# Phase 8.2 — sub-agents inherit the parent model when model is ''. Grunt work
+# (file scans, batch fetch, audits) shouldn't pay Opus prices. Drop to a cheaper model;
+# leave provider '' to inherit the parent's. Prove the model ID exists with a real
+# `aws bedrock-runtime invoke-model` call first — a bad ID fails silently at delegate
+# time, not at config load.
+delegation:
+  model: us.anthropic.claude-sonnet-4-6   # was '' (inherited Opus); sub-tasks only
+  provider: ''                            # '' → inherits parent's amazon-bedrock
+  max_concurrent_children: 3
+  max_spawn_depth: 1
+
+# Vision is a separate auxiliary model — Sonnet is enough for image reading, no need
+# to spend Opus on it.
+auxiliary:
+  vision:
+    provider: bedrock
+    model: us.anthropic.claude-sonnet-4-6
+  compression:
+    provider: bedrock
+    model: us.anthropic.claude-opus-4-8   # keep compression strong — it summarizes context
+
+# Phase 8.3 — deep-research depth. Built-in web_search only returns snippets; mount the
+# agentcore-deepsearch MCP (this repo) for JS rendering / anti-bot / full-text fetch.
+mcp_servers:
+  agentcore-deepsearch:
+    command: ~/.claude/skills/agentcore-deepsearch/.venv/bin/python
+    args:
+    - ~/.claude/skills/agentcore-deepsearch/server.py
+    cwd: ~/.claude/skills/agentcore-deepsearch
+    env:
+      AGENTCORE_REGION: us-west-2
+      DEEPSEARCH_FETCH_CONCURRENCY: '4'
+      DEEPSEARCH_MAX_CHARS: '50000'
+    enabled: true
