@@ -91,15 +91,37 @@ def tool_fetch_batch(a):
 
 
 def tool_deep_search(a):
-    hits = fetcher.web_search(a["query"], max(a.get("top_k_fetch", 3) * 2, 6), a.get("engine", "duckduckgo"))
-    top = hits[: a.get("top_k_fetch", 3)]
+    # 先广：用搜索引擎打开视野，多拿候选来源（至少 8 条，覆盖面优先）
+    top_k = max(int(a.get("top_k_fetch", 3)), 3)
+    overview = fetcher.web_search(
+        a["query"], max(top_k * 3, 8), a.get("engine", "duckduckgo"))
+    # 再深：对前 K 个来源纵深抓正文（必须 ≥2 个，单一来源不算深度调研）
+    fetch_n = max(top_k, 2)
+    top = overview[:fetch_n]
     pages = _fetch_many([h["url"] for h in top], force_browser=a.get("force_browser", False))
     for h, p in zip(top, pages):
         h["markdown"] = p.get("markdown", "")
         h["via"] = p.get("via")
         if p.get("error"):
             h["fetch_error"] = p["error"]
-    return {"query": a["query"], "sources": top}
+    fetched_ok = sum(1 for h in top if h.get("markdown"))
+    return {
+        "query": a["query"],
+        # 广：搜索引擎完整视野，标题+URL+摘要，让 LLM 先看清有哪些来源
+        "search_overview": [
+            {"title": h["title"], "url": h["url"], "body": h.get("body", "")}
+            for h in overview
+        ],
+        # 深：纵深抓取的多个来源正文
+        "sources": top,
+        "note": (
+            f"广度：{len(overview)} 个候选来源；纵深：抓取 {fetched_ok} 个来源正文。"
+            "结论必须建立在多个来源交叉验证上，单一来源标 [待验证]。"
+            if fetched_ok >= 2 else
+            f"⚠️ 仅成功抓取 {fetched_ok} 个来源正文，不足以交叉验证。"
+            "请扩大 top_k_fetch 或换 query 再搜，别用单一来源下结论。"
+        ),
+    }
 
 
 def tool_deep_search_multi(a):

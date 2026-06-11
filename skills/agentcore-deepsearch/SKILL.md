@@ -25,9 +25,14 @@ author: oneclaw
 | `web_search` | 搜索，返回 标题/URL/摘要，不抓正文 | `query`, `num_results`, `engine`(duckduckgo/google), `freshness`(day/week/month/year) |
 | `fetch_page` | 抓单 URL 正文 → markdown | `url`, `force_browser`, `force_http`, `wait_selector` |
 | `fetch_batch` | 并发抓多个 URL 正文 | `urls[]`, `force_browser`, `force_http` |
-| `deep_search` | 一步：搜索 + 抓 top-K 正文 | `query`, `top_k_fetch`, `engine`, `force_browser` |
+| `deep_search` | **先广后深**：搜索引擎打开视野 + 纵深抓多个来源正文 | `query`, `top_k_fetch`, `engine`, `force_browser` |
 | `deep_search_multi` | 并发跑多个子查询 | `queries[]`, `top_k_fetch`, `engine` |
 | `browser_status` | 看 region/配置，排查连接 | — |
+
+**`deep_search` 返回结构（先广后深）**：
+- `search_overview` — 搜索引擎完整视野，多个候选来源的标题/URL/摘要，先看清全貌。
+- `sources` — 对前 K 个来源纵深抓取的正文（强制 ≥2 个，单一来源不算深度调研）。
+- `note` — 广度/纵深计数 + 交叉验证提醒；抓到 <2 个来源时会警告别下结论。
 
 ## 标准 deep research 编排（递归在 LLM 侧，工具只取数）
 

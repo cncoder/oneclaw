@@ -119,36 +119,85 @@ def fetch_browser(url: str, wait_selector: str | None = None):
         return ("", f"browser_error: {e}")
 
 
-def fetch_page(url: str, force_browser: bool = False, force_http: bool = False,
-               wait_selector: str | None = None) -> dict:
-    """智能混合抓单页。
+def _now():
+    # 脚本环境禁 Date.now/time()，但 fetcher 是普通 py 模块，可用 time
+    import time as _t
+    return int(_t.time())
 
-    force_http=True  → 只用本地 HTTP（最快最省）
-    force_browser=True → 直接用云端浏览器
-    默认 → 先 HTTP，被反爬/正文过短再升级云端
+
+def fetch_cdp_md(url: str):
+    """CDP 抓本机登录 Chrome，转 markdown。返回 (markdown, error)。"""
+    import cdp_fetch
+    text, err = cdp_fetch.fetch_cdp(url)
+    if err:
+        return ("", err)
+    # innerText 已是纯文本，轻度清理即可
+    return (re.sub(r"\n{3,}", "\n\n", text).strip(), None)
+
+
+def fetch_page(url: str, force_browser: bool = False, force_http: bool = False,
+               force_cdp: bool = False, wait_selector: str | None = None) -> dict:
+    """智能混合抓单页，三层抓取链 + 自回归站点清单。
+
+    方法：http（直连，最省） / browser（AWS 云端，过反爬） / cdp（本机登录 Chrome，过封闭源）
+    force_* 强制指定。默认：查站点清单选首选方法，失败按 http→browser→cdp 升级。
     """
+    import site_policy
     result = {"url": url, "markdown": "", "via": None, "truncated": False, "error": None}
 
-    if force_browser:
-        md, err = fetch_browser(url, wait_selector)
-        result.update(via="browser", error=err)
+    def _done(via, md, err=None):
+        result.update(via=via, error=err)
         result["markdown"], result["truncated"] = _truncate(md)
+        ok = bool(result["markdown"]) and not err
+        try:
+            site_policy.record(url, via, ok, _now())
+        except Exception:
+            pass
         return result
 
-    md, html, err = fetch_http(url)
-    if not force_http and (err or _looks_blocked(html, md)):
+    # 1) 显式强制
+    if force_cdp:
+        md, err = fetch_cdp_md(url)
+        return _done("cdp", md, err)
+    if force_browser:
+        md, err = fetch_browser(url, wait_selector)
+        return _done("browser", md, err)
+    if force_http:
+        md, html, err = fetch_http(url)
+        return _done("http", md, err)
+
+    # 2) 查自回归清单：这个域名历史/种子首选方法
+    preferred = site_policy.preferred_method(url)
+    if preferred == "cdp":
+        md, err = fetch_cdp_md(url)
+        if md and not err:
+            return _done("cdp", md)
+        # CDP 不行（端口没开等）→ 退云端
+        bmd, berr = fetch_browser(url, wait_selector)
+        return _done("browser", bmd, berr or err)
+    if preferred == "browser":
         bmd, berr = fetch_browser(url, wait_selector)
         if bmd and not berr:
-            result.update(via="browser", error=None)
-            result["markdown"], result["truncated"] = _truncate(bmd)
-            return result
-        # 云端也失败，回退到 HTTP 拿到的（哪怕短），把两个错都带上
-        result["error"] = f"http:[{err}] browser:[{berr}]" if (err or berr) else None
+            return _done("browser", bmd)
+        # 云端不行 → 试 CDP（也许本机登录态能过）
+        md, err = fetch_cdp_md(url)
+        return _done("cdp", md, err or berr)
 
-    result.update(via="http" if not result.get("via") else result["via"])
+    # 3) 默认混合链：http → browser → cdp
+    md, html, err = fetch_http(url)
+    if not (err or _looks_blocked(html, md)):
+        return _done("http", md)
+    # http 被挡 → 云端
+    bmd, berr = fetch_browser(url, wait_selector)
+    if bmd and not berr and not _looks_blocked(bmd, bmd):
+        return _done("browser", bmd)
+    # 云端也被挡（封闭源）→ 本机 CDP 兜底
+    cmd, cerr = fetch_cdp_md(url)
+    if cmd and not cerr:
+        return _done("cdp", cmd)
+    # 全失败：回 http 拿到的（哪怕短），带上各层错误
+    result.update(via="http", error=f"http:[{err}] browser:[{berr}] cdp:[{cerr}]")
     result["markdown"], result["truncated"] = _truncate(md)
-    if err and not result["markdown"]:
-        result["error"] = err
     return result
 
 

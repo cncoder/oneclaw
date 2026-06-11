@@ -84,7 +84,11 @@ Desktop notifications for Claude Code via `Notification` and `Stop` hooks. Pops 
 
 ### agentcore-deepsearch
 
-A deployable MCP server that does deep web research via AWS Bedrock AgentCore's managed cloud browser. Hybrid fetch: local HTTP first (free/fast), auto-upgrades to the cloud headless Chromium on anti-bot / JS-rendered / SPA pages. Ships runnable `server.py` + `fetcher.py` (bare stdio JSON-RPC, no MCP SDK needed) exposing 6 tools — `web_search` / `fetch_page` / `fetch_batch` / `deep_search` / `deep_search_multi` / `browser_status`. Reads the system browser ID from the SDK constant so it always tracks AWS's latest default instance.
+A deployable MCP server that does deep web research via AWS Bedrock AgentCore's managed cloud browser. **Three-tier fetch chain with a self-learning site policy**: local HTTP (free) → AWS cloud Chromium (anti-bot/JS/SPA) → **CDP to your local logged-in Chrome** for IP-walled closed sources (Reddit/X/Zhihu/etc. — verified: cloud/jina/API all 403, CDP gets through). `deep_search` is **breadth-first then depth** (returns a search overview of many sources + deep-fetched bodies). A self-regressive `site_policy.json` records which method works per domain and gets smarter every run. Ships `server.py` + `fetcher.py` + `cdp_fetch.py` + `site_policy.py` (bare stdio JSON-RPC) exposing 6 tools.
+
+### ai-search
+
+Drive your **logged-in Perplexity / Gemini** via CDP to get cited research reports directly — skip wiring up your own search+fetch. `ask.py {perplexity|gemini} "question"`. Two engines cross-check best. `--deep` (Gemini Deep Research) is **experimental**: it can start the research but can't auto-retrieve the report (Gemini runs it async in a separate view) — it leaves the report in your Chrome tab. For programmatic reports, prefer plain ai-search or agentcore-deepsearch.
 
 ## License
 
