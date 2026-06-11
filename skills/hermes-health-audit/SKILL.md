@@ -1,6 +1,6 @@
 ---
 name: hermes-health-audit
-description: "Full-stack Hermes Agent health audit: observability config, compression tuning, prompt/skill consistency, skill invocation diagnosis, system overload detection, and session pattern analysis with subagent recommendations. Use when skills stop triggering, model ignores loaded skill steps, context grows unexpectedly, sessions hit compression too often, long tasks get interrupted, or after editing any prompt/skill/config file."
+description: "Full-stack Hermes Agent health audit: observability config, compression tuning, prompt/skill consistency, skill invocation diagnosis, system overload detection, session pattern analysis, tool-use/delegation tuning, plus a full annotated config (model/queue/IO/security), per-channel Feishu output discipline, a prompt-engineering method, and a reverse-QA regression loop. Use when skills stop triggering, model ignores loaded skill steps, context grows unexpectedly, sessions hit compression too often, long tasks get interrupted, the task queue misbehaves, or after editing any prompt/skill/config file."
 ---
 
 # Hermes Health Audit
@@ -549,7 +549,7 @@ ls -t ~/.hermes/sessions/session_*.json | head -20 | while read f; do
 done
 ```
 
-**Benchmark (from real data, Abel's 100+ feishu sessions):**
+**Benchmark (from real data, 100+ production feishu sessions):**
 
 | Metric | Actual Value | Meaning |
 |--------|-------------|---------|
@@ -590,7 +590,7 @@ ORDER BY started_at DESC LIMIT 10;"
 - Cache hit >95% → excellent (system prompt + early messages fully cached)
 - Cache hit 80-95% → normal (some cache misses on long sessions)
 - Cache hit <80% → investigate (config changes invalidating cache, or model switching mid-session)
-- Abel's baseline: >99% cache hit (system prompt dominates repeated calls)
+- Observed baseline: >99% cache hit (system prompt dominates repeated calls)
 
 ### 6.5 Long Task & Interrupt Strategy
 
@@ -708,7 +708,86 @@ grep -rniE "AGENTS\.md|以 .* 为准|回查 .*\.md" ~/.hermes/SOUL.md ~/.hermes/
 ```
 Repoint stale refs; banner deprecated files with "DO NOT add rules here — moved to SOUL.md".
 
-> **Full reference config:** [`references/optimized-config.yaml`](references/optimized-config.yaml) — all of the above settings in one annotated `config.yaml`, each line noting why.
+> **Quick reference config:** [`references/optimized-config.yaml`](references/optimized-config.yaml) — the Phase 8 settings in one annotated `config.yaml`, each line noting why.
+
+---
+
+## Phase 9: Full-Config, Queue, IO & QA Hardening
+
+Phase 8 fixes the four highest-leverage knobs. Phase 9 is the rest of a real,
+heavily-used deployment: the *complete* annotated config, the task-queue
+parameters, per-channel output discipline (Feishu/Lark), the prompt-engineering
+method, and the reverse-QA loop that proves a change actually took effect. These
+are reference specs — copy what fits your backend, don't paste blind.
+
+### 9.1 Full annotated config (every tunable that matters)
+
+The quick config in 8 is a teaser. The full one documents every block: model,
+compression, auxiliary-model routing, delegation, the **kanban task-queue**,
+session/reset lifecycle, tool-loop guardrails, per-platform display, security,
+secrets, and MCP mounts — one WHY per line.
+
+> **Full reference:** [`references/full-config-annotated.yaml`](references/full-config-annotated.yaml)
+
+Self-build checklist per deploy (don't copy values blind):
+- Set `model` / region / `custom_providers` to your backend; keep every
+  `api_key: ''` and load real keys from env / a secrets manager.
+- Tune the **queue** (`kanban:`) to your throughput: `dispatch_interval_seconds`,
+  `failure_limit`, `auto_decompose_per_tick`, `max_in_progress_per_profile`,
+  `dispatch_stale_timeout_seconds` (reclaim stuck tasks).
+- Tune `session_reset` (`idle_minutes`, `at_hour`) and `compression.threshold`
+  to your context window — `0.5` on a 1M window, higher on smaller windows.
+
+### 9.2 Feishu / Lark output discipline
+
+The Lark client doesn't render token streaming or live tool progress, and interim
+"working on it" messages spam the chat. Mute them per-channel while keeping them
+on terminal/Telegram:
+
+```yaml
+display:
+  platforms:
+    feishu:
+      tool_progress: false              # Lark can't render live progress → noise
+      streaming: false                  # no token streaming on Lark → disable
+      interim_assistant_messages: false # stop the "working..." spam
+      busy_ack_detail: false            # terse busy ack
+      long_running_notifications: true  # DO keep: notify on long-task completion
+feishu:
+  allow_bots: all                       # all | none | [open_ids] — gate bot-to-bot triggers
+```
+
+Pair this with the prompt-side rule "prefer lists over tables on Feishu" (the
+post-markdown renderer drops pipe tables). Config + prompt together; see 9.3.
+Full per-channel matrix is in the full config reference.
+
+### 9.3 Prompt-engineering method (write rules the model actually follows)
+
+Distilled method for the identity prompt (`SOUL.md`), so a long file doesn't
+become "loaded but ignored": explicit priority tags (`MUST` / `NEVER`, scarce),
+every rule carries its **consequence**, positive+negative example pairs, and
+periodic **compression** (one rule = one line, push runbooks into skills). Plus
+the "every reply is a finished product" output-discipline section and the
+anti-AI-tells ban list.
+
+> **Method:** [`references/prompt-engineering-playbook.md`](references/prompt-engineering-playbook.md)
+
+Reminder (Phase 8.4): Hermes only reliably loads `SOUL.md` — `AGENTS.md` loads
+only when cwd is the agent home, so it silently fails under cron/gateway. Put
+every rule in SOUL.md; tombstone AGENTS.md.
+
+### 9.4 Reverse-QA evaluation (prove the change took effect)
+
+Editing a file ≠ the rule taking effect. After any Phase change, run the
+regression loop: **restart the gateway → trigger each changed rule with a real,
+stateful task → watch for the failure signal → on FAIL, ask the agent "why didn't
+you do X, one-sentence root cause, no excuses"** and patch the named rule. Use a
+stateful session (`hermes chat`), never a stateless `-z` probe.
+
+> **QA loop:** [`references/qa-evaluation-playbook.md`](references/qa-evaluation-playbook.md)
+
+This is the verification gate for the whole audit. A green audit with no
+behavioral regression test is an unverified audit.
 
 ---
 
