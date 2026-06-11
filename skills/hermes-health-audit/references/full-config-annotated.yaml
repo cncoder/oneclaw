@@ -1,0 +1,438 @@
+# Hermes Agent — FULL annotated config reference (~/.hermes/config.yaml)
+# =============================================================================
+# Every tunable that matters in a real, heavily-used Hermes deployment, with a
+# one-line WHY on each. Curated from a production audit on a Bedrock + Claude
+# backend (cost ignored, quality maximized).
+#
+# READ ME FIRST
+#   - This is a REFERENCE, not a drop-in file. Copy the blocks you need.
+#   - Model IDs / region / provider are examples — swap for your backend.
+#   - Secrets are NEVER inlined here. Every `api_key` stays '' and credentials
+#     come from the environment / a secrets manager (see the `secrets:` block).
+#   - Paths use `~/...` conventions. Never commit a config with absolute home
+#     paths, account IDs, or customer names.
+#   - After editing, a running gateway keeps the OLD prompt/config until you
+#     restart it. Always restart + verify (see bottom of SKILL.md).
+# =============================================================================
+
+# ----------------------------------------------------------------------------
+# MODEL — the main-loop brain
+# ----------------------------------------------------------------------------
+model:
+  default: us.anthropic.claude-opus-4-8   # strongest model for the main loop
+  provider: amazon-bedrock                # amazon-bedrock | openai | anthropic | openrouter | ...
+  base_url: ''                            # '' → provider default endpoint
+  context_length: 1000000                 # MUST set explicitly. Bedrock's static
+                                          # model table defaults to 200K even when
+                                          # the 1M beta header is sent — this field
+                                          # is the override that actually unlocks 1M.
+  max_tokens: 32000                       # max output tokens per turn. Raise for
+                                          # long autonomous runs; too low truncates
+                                          # mid-answer with finish_reason=length.
+
+providers: {}                             # per-provider overrides (keep empty unless multi-provider)
+fallback_providers: []                    # ordered fallback chain on provider failure
+credential_pool_strategies: {}            # round-robin / weighted key pools (advanced)
+toolsets:
+- hermes-cli                              # which builtin toolset the CLI surface gets
+
+# ----------------------------------------------------------------------------
+# AGENT — turn limits, autonomy, tool-use enforcement
+# ----------------------------------------------------------------------------
+agent:
+  max_turns: 120                          # high ceiling for long autonomous runs
+  gateway_timeout: 1800                   # hard wall-clock cap (s) for one gateway turn
+  restart_drain_timeout: 180              # grace (s) to let running agents finish on restart
+  api_max_retries: 3                      # retries on provider 5xx / throttling
+  service_tier: ''                        # provider QoS tier ('' = default)
+
+  # tool_use_enforcement: the single highest-leverage flag for Claude backends.
+  #   auto  → only injects "you MUST use your tools" steering for a HARDCODED model
+  #           list (gpt/gemini/grok/qwen/...). Claude/Opus/Sonnet are EXCLUDED, so a
+  #           Claude-backed agent narrates ("I would run X...") instead of acting.
+  #   true  → always inject the steering. This is what you want on Claude.
+  #   false → never. [substrings] → only for matching model names.
+  tool_use_enforcement: true              # FIX: force on so Claude actually calls tools
+  task_completion_guidance: true          # "finish the job" nudge, model-agnostic
+
+  environment_probe: true                 # auto-detect OS/tools at session start
+  environment_hint: ''                    # extra static env context for the model
+  gateway_timeout_warning: 900            # warn at 15 min before the 30 min hard cap
+  clarify_timeout: 600                    # how long to wait on a clarifying question
+  gateway_notify_interval: 180            # progress ping cadence (s) on long turns
+  gateway_auto_continue_freshness: 3600   # auto-resume a turn if interrupted within 1h
+  image_input_mode: auto                  # auto | always | never — vision routing
+  disabled_toolsets: []
+  verbose: true                           # richer agent-side logging
+  reasoning_effort: medium                # low | medium | high — thinking budget
+  # personalities: builtin persona presets (kawaii / pirate / noir / ...). Cosmetic;
+  # your real identity lives in SOUL.md, not here. Omitted from this reference.
+
+# ----------------------------------------------------------------------------
+# COMPRESSION — context window hygiene (Phase 2 of the audit)
+# ----------------------------------------------------------------------------
+# Root-cause chain when context grows "unexpectedly": threshold too high → fires
+# late → summary dropped too much → model loses thread. Tune these together.
+compression:
+  enabled: true
+  threshold: 0.5                          # fire at 50% of context (was 0.75 = too late
+                                          # on a 1M window — a single big turn overflows)
+  target_ratio: 0.2                       # compress down to 20% of the window
+  protect_last_n: 40                      # never summarize the most recent 40 messages
+  protect_first_n: 3                      # keep the first 3 (task framing) verbatim
+  hygiene_hard_message_limit: 400         # absolute message-count backstop
+  abort_on_summary_failure: false         # false → degrade gracefully if summary call fails
+
+prompt_caching:
+  cache_ttl: 5m                           # prompt-cache TTL. Longer = higher hit rate but
+                                          # staler; 5m is a good default for chat cadence.
+
+# ----------------------------------------------------------------------------
+# AUXILIARY MODELS — cheaper models for grunt work (cost control)
+# ----------------------------------------------------------------------------
+# Each auxiliary task can run on its own model. Vision/title/triage do NOT need
+# the Opus main model — route them to a cheaper one. provider 'auto'/'' inherits.
+auxiliary:
+  vision:
+    provider: bedrock
+    model: us.anthropic.claude-sonnet-4-6 # Sonnet reads images fine; don't pay Opus
+    api_key: ''
+    timeout: 120
+  compression:
+    provider: bedrock
+    model: us.anthropic.claude-opus-4-8   # keep compression STRONG — a weak summarizer
+    api_key: ''                           # silently loses context the agent needs later
+    timeout: 120
+    context_length: 1000000
+  web_extract: { provider: auto, model: '', api_key: '', timeout: 360 }
+  skills_hub: { provider: auto, model: '', api_key: '', timeout: 30 }
+  approval: { provider: auto, model: '', api_key: '', timeout: 30 }
+  mcp: { provider: auto, model: '', api_key: '', timeout: 30 }
+  title_generation: { provider: auto, model: '', api_key: '', timeout: 30 }
+  triage_specifier: { provider: auto, model: '', api_key: '', timeout: 120 }
+  kanban_decomposer: { provider: auto, model: '', api_key: '', timeout: 180 }  # see kanban:
+  profile_describer: { provider: auto, model: '', api_key: '', timeout: 60 }
+  curator: { provider: auto, model: '', api_key: '', timeout: 600 }
+  session_search: { provider: auto, model: '', api_key: '', timeout: 30, max_concurrency: 3 }
+
+# ----------------------------------------------------------------------------
+# DELEGATION — sub-agent fan-out (Phase 8.2)
+# ----------------------------------------------------------------------------
+# When model is '' a sub-agent INHERITS the parent (Opus). Grunt sub-tasks (file
+# scans, batch fetch, audits) shouldn't pay Opus prices. Drop to a cheaper model.
+# GOTCHA: a bad model ID fails SILENTLY at delegate time, not at config load —
+# prove the ID exists with a real invoke (e.g. aws bedrock-runtime invoke-model)
+# before trusting it.
+delegation:
+  model: us.anthropic.claude-sonnet-4-6   # was '' (inherited Opus); sub-tasks only
+  provider: ''                            # '' → inherit parent's provider
+  api_key: ''
+  inherit_mcp_toolsets: true              # children get the parent's MCP servers
+  max_iterations: 50                      # per-child turn cap
+  child_timeout_seconds: 600              # per-child wall-clock cap
+  reasoning_effort: ''                    # '' → inherit
+  max_concurrent_children: 3              # fan-out width — raise for more parallelism
+  max_spawn_depth: 1                      # 1 = children can't spawn grandchildren (safe default)
+  orchestrator_enabled: true              # allow the orchestrator pattern
+  subagent_auto_approve: false            # require approval for sub-agent risky actions
+
+# ----------------------------------------------------------------------------
+# KANBAN — the task QUEUE engine (the "queue parameters" to self-build per deploy)
+# ----------------------------------------------------------------------------
+# This is Hermes' background task queue: tasks get decomposed, dispatched to
+# workers, retried on failure. These knobs decide throughput vs. safety.
+kanban:
+  dispatch_in_gateway: true               # run the dispatcher inside the gateway process
+  dispatch_interval_seconds: 60           # how often the queue is polled for ready work
+  failure_limit: 2                        # mark a task failed after N worker errors
+  worker_log_rotate_bytes: 2097152        # rotate worker logs at 2 MB
+  worker_log_backup_count: 1
+  orchestrator_profile: ''                # which profile runs orchestration ('' = default)
+  default_assignee: ''                    # default worker identity for new tasks
+  max_in_progress_per_profile: null       # cap concurrent in-flight tasks per profile (null = no cap)
+  auto_decompose: true                    # auto-split a big task into sub-tasks via the
+                                          # kanban_decomposer auxiliary model (see auxiliary:)
+  auto_decompose_per_tick: 3              # decompose at most 3 tasks per dispatch tick
+                                          # (throttle so decomposition doesn't starve dispatch)
+  dispatch_stale_timeout_seconds: 14400   # reclaim a task stuck "in progress" after 4h
+
+cron:
+  wrap_response: true                     # wrap cron-job output for delivery
+  max_parallel_jobs: null                 # cap concurrent cron jobs (null = unlimited)
+
+goals:
+  max_turns: 20                           # turn cap for goal-mode runs
+
+# ----------------------------------------------------------------------------
+# SESSIONS / RESET — session lifecycle (queue-adjacent housekeeping)
+# ----------------------------------------------------------------------------
+sessions:
+  auto_prune: false                       # don't auto-delete old sessions (manual control)
+  retention_days: 90
+  vacuum_after_prune: true                # reclaim SQLite space after a prune
+  min_interval_hours: 24
+  write_json_snapshots: false             # set true only when you need JSON session dumps
+
+session_reset:
+  mode: both                              # reset by idle AND daily clock
+  idle_minutes: 1440                      # auto-reset a session after 24h idle
+  at_hour: 4                              # daily reset hour (local) — pick a quiet time
+group_sessions_per_user: true            # one session per user in group chats (don't merge users)
+
+# ----------------------------------------------------------------------------
+# TOOL EXECUTION GUARDRAILS — stop runaway loops
+# ----------------------------------------------------------------------------
+tool_output:
+  max_bytes: 50000                        # truncate huge tool output (protect context)
+  max_lines: 2000
+  max_line_length: 2000
+tool_loop_guardrails:
+  warnings_enabled: true
+  hard_stop_enabled: true                 # actually halt, don't just warn
+  warn_after:   { exact_failure: 2, same_tool_failure: 3, idempotent_no_progress: 2 }
+  hard_stop_after: { exact_failure: 5, same_tool_failure: 8, idempotent_no_progress: 5 }
+file_read_max_chars: 100000               # cap single-file reads
+code_execution:
+  mode: project                           # sandbox scope for code exec
+  timeout: 300
+  max_tool_calls: 50                      # per-run tool-call budget
+tools:
+  tool_search:
+    enabled: auto                         # auto-enable tool search when the toolset is large
+    threshold_pct: 10                     # turn it on once tools exceed 10% of context
+    search_default_limit: 5
+    max_search_limit: 20
+
+# ----------------------------------------------------------------------------
+# DISPLAY + PER-PLATFORM IO — the Feishu/Lark output control (asked for explicitly)
+# ----------------------------------------------------------------------------
+# The global display block sets defaults; `platforms:` overrides PER channel.
+# Feishu/Lark is the noisy one: it does NOT render streaming tokens or tool
+# progress cleanly, and interim assistant messages spam the chat. Mute them on
+# Feishu while keeping them on terminal/Telegram.
+display:
+  compact: false
+  resume_display: full                    # how much history to show on resume
+  resume_exchanges: 10
+  busy_input_mode: queue                  # queue | steer — what to do with a NEW user
+                                          # message while a turn is running. queue = hold it
+                                          # for the next turn (no mid-turn derailing); steer =
+                                          # inject as a course-correction into the live turn.
+                                          # NOTE: a change here needs a NEW session to take effect.
+  streaming: true                         # global default; overridden per platform below
+  show_reasoning: false                   # don't leak chain-of-thought to users
+  final_response_markdown: render         # render markdown in the final answer
+  inline_diffs: true                      # show file edits as diffs
+  file_mutation_verifier: true            # verify a file actually changed after an edit
+  turn_completion_explainer: true         # one-line "why I stopped" on turn end
+  show_cost: true                         # surface per-turn cost (set false to hide)
+  language: en
+  interim_assistant_messages: true        # global default; muted on Feishu below
+  tool_progress_command: true             # show tool calls live; muted on Feishu below
+  tool_progress: all
+
+  platforms:
+    telegram:
+      streaming: true                     # Telegram renders streaming fine — keep it
+    discord:
+      streaming: false                    # Discord edits are rate-limited — disable streaming
+    feishu:
+      # ---- FEISHU/LARK OUTPUT DISCIPLINE ----
+      tool_progress: false                # Feishu can't render live tool progress → noise
+      streaming: false                    # Feishu has no token streaming → disable
+      interim_assistant_messages: false   # don't spam the chat with "working on it" partials
+      busy_ack_detail: false              # terse busy ack, not a verbose status dump
+      long_running_notifications: true    # DO keep: tell the user when a long task finishes
+
+  runtime_footer:
+    enabled: true
+    fields: [model, context_pct, cwd]     # ONLY these 3 are implemented. Adding tokens/cost
+                                          # is silently ignored — use request dumps for those.
+
+# ----------------------------------------------------------------------------
+# FEISHU / LARK CHANNEL — who may talk to the agent
+# ----------------------------------------------------------------------------
+feishu:
+  allow_bots: all                         # all | none | [open_ids] — whether OTHER bots may
+                                          # trigger this agent. 'all' enables bot-to-bot
+                                          # collaboration; restrict if you get bot loops.
+# (Per-platform mention/allowlist gating for other channels:)
+discord:  { require_mention: true, auto_thread: true, history_backfill: true, history_backfill_limit: 50 }
+slack:    { require_mention: true }
+telegram: { reactions: false }
+matrix:   { require_mention: true }
+
+# Which toolset each platform surface gets (keep platform tools scoped):
+platform_toolsets:
+  cli: [hermes-cli]
+  feishu: [hermes-feishu]
+  telegram: [hermes-telegram]
+  discord: [hermes-discord]
+  slack: [hermes-slack]
+  homeassistant: [hermes-homeassistant]
+
+# Custom hooks (e.g. a Feishu IO patch that fixes markdown/table rendering for
+# the Lark client). Implementation is deploy-specific; the toggle lives here.
+hooks:
+  feishu-io-patch:
+    enabled: true                         # normalize output for the Lark renderer
+hooks_auto_accept: false
+
+# ----------------------------------------------------------------------------
+# MEMORY — long-term recall budgets
+# ----------------------------------------------------------------------------
+memory:
+  memory_enabled: true
+  user_profile_enabled: true              # learn per-user preferences over time
+  memory_char_limit: 2200                 # cap injected memory size (protect context)
+  user_char_limit: 1375
+  nudge_interval: 10                       # remind the model to record memories every N turns
+  flush_min_turns: 6                       # don't flush memory more often than every 6 turns
+
+context:
+  engine: compressor                       # context-management strategy
+
+# ----------------------------------------------------------------------------
+# SKILLS + CURATOR — skill loading and auto-pruning
+# ----------------------------------------------------------------------------
+skills:
+  external_dirs: []                        # extra skill search paths
+  template_vars: true                      # allow {{var}} expansion in skills
+  inline_shell: false                      # SECURITY: don't auto-run shell embedded in skills
+  guard_agent_created: false               # gate skills the agent writes for itself
+  creation_nudge_interval: 15
+curator:                                   # background skill janitor
+  enabled: true
+  interval_hours: 168                      # run weekly
+  stale_after_days: 30                     # flag a skill unused for 30d
+  archive_after_days: 90                   # archive after 90d
+  prune_builtins: true
+  backup: { enabled: true, keep: 5 }       # always back up before pruning
+
+# ----------------------------------------------------------------------------
+# CHECKPOINTS — workspace snapshots for rollback
+# ----------------------------------------------------------------------------
+checkpoints:
+  enabled: true
+  max_snapshots: 50
+  max_total_size_mb: 500
+  max_file_size_mb: 10
+  auto_prune: false
+  retention_days: 7
+  min_interval_hours: 24
+
+# ----------------------------------------------------------------------------
+# BACKEND / REGION
+# ----------------------------------------------------------------------------
+bedrock:
+  region: us-west-2                        # example region — set yours
+  discovery:
+    enabled: true                          # auto-discover available models
+    refresh_interval: 3600
+  guardrail:
+    guardrail_identifier: ''               # attach a Bedrock Guardrail here if you use one
+    stream_processing_mode: async
+    trace: disabled
+
+custom_providers:
+- name: amazon-bedrock
+  base_url: https://bedrock-runtime.<REGION>.amazonaws.com   # templated — set region
+  api_key: ''                              # bedrock uses IAM creds from env, NOT a key
+  api_mode: bedrock_converse
+- name: litellm                            # optional local proxy example
+  base_url: http://localhost:4000/v1
+  api_key: ''
+  api_mode: chat_completions
+
+network:
+  force_ipv4: false                        # set true if IPv6 routing is flaky behind a proxy
+
+# ----------------------------------------------------------------------------
+# BROWSER — CDP-backed browsing (reuse a logged-in local Chrome)
+# ----------------------------------------------------------------------------
+browser:
+  engine: auto
+  cdp_url: http://127.0.0.1:9222           # connect to a local Chrome with --remote-debugging-port
+  allow_private_urls: false                # SECURITY: block SSRF to internal IPs
+  auto_local_for_private_urls: true        # use the local browser for private URLs
+  headless: false                          # visible browser (set true for servers)
+  inactivity_timeout: 120
+  command_timeout: 30
+  dialog_policy: must_respond
+  dialog_timeout_s: 300
+
+# ----------------------------------------------------------------------------
+# SECURITY — the guardrails that matter on a skip-permissions box
+# ----------------------------------------------------------------------------
+security:
+  allow_private_urls: false                # block fetches to internal/loopback ranges
+  redact_secrets: false                    # set true to scrub secrets from logs/output
+  website_blocklist: { enabled: false, domains: [] }
+  allow_lazy_installs: true                # allow on-demand dependency installs
+approvals:
+  mode: false                              # global approval gate (false = trust the agent)
+  cron_mode: approve                       # but still gate cron-initiated actions
+  mcp_reload_confirm: false
+  destructive_slash_confirm: false         # confirm destructive /slash commands
+command_allowlist:                         # commands the agent may run without prompting
+- /bin/sleep
+- /bin/echo
+- /usr/bin/open
+# (Real deployments add domain-specific entries here, e.g. "restart the gateway".)
+
+privacy:
+  redact_pii: false                        # set true to scrub PII from stored sessions
+
+# ----------------------------------------------------------------------------
+# SECRETS — how credentials enter the process (NEVER inline them)
+# ----------------------------------------------------------------------------
+secrets:
+  bitwarden:
+    enabled: false                         # example secrets backend
+    access_token_env: BWS_ACCESS_TOKEN     # token comes from the ENV, never the file
+    project_id: ''
+    cache_ttl_seconds: 300
+    override_existing: true
+    auto_install: true
+# Rule: every `api_key:` above stays ''. Real keys come from env vars, an
+# instance profile, or a secrets manager — never committed to config.yaml.
+
+# ----------------------------------------------------------------------------
+# MCP SERVERS — external tool servers (paths templated, NEVER absolute home paths)
+# ----------------------------------------------------------------------------
+mcp_servers:
+  # Deep web research server shipped in THIS repo (skills/agentcore-deepsearch).
+  agentcore-deepsearch:
+    command: ~/.claude/skills/agentcore-deepsearch/.venv/bin/python
+    args:
+    - ~/.claude/skills/agentcore-deepsearch/server.py
+    cwd: ~/.claude/skills/agentcore-deepsearch
+    env:
+      AGENTCORE_REGION: us-west-2          # set your cloud-browser region
+      DEEPSEARCH_FETCH_CONCURRENCY: '4'    # parallel fetch workers
+      DEEPSEARCH_MAX_CHARS: '50000'        # per-page text cap
+    enabled: true
+  # Example of mounting your own MCP server (e.g. a Lark/Feishu tool bridge):
+  #   <your-mcp-name>:
+  #     command: python3
+  #     args: [ ~/path/to/your-mcp-server.py ]
+  #     enabled: true
+
+# ----------------------------------------------------------------------------
+# MISC
+# ----------------------------------------------------------------------------
+logging: { level: INFO, max_size_mb: 5, backup_count: 3 }
+gateway:
+  strict: false
+  trust_recent_files: true                 # let the agent serve files it just created
+  trust_recent_files_seconds: 600
+lsp:
+  enabled: true                            # language-server integration for code edits
+  wait_mode: document
+  wait_timeout: 5.0
+  install_strategy: auto
+updates:
+  pre_update_backup: false                 # set true to snapshot config before self-update
+  backup_keep: 5
+timezone: ''                               # '' = system tz; set explicitly for cron determinism
+_config_version: 25                        # schema version — DON'T hand-edit; the app migrates it

@@ -1,0 +1,6 @@
+# Verified working versions (the floor — tested on Python 3.14, macOS)
+bedrock-agentcore>=1.14.0   # AWS managed cloud browser SDK (provides browser_session)
+ddgs>=9.14.4                # DuckDuckGo search backend for web_search
+html2text>=2025.4.15        # HTML → clean markdown
+httpx>=0.28.1               # local HTTP fetch (the cheap path)
+playwright>=1.60.0          # CDP client to drive the cloud browser

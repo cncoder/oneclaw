@@ -1,6 +1,6 @@
 ---
 name: hermes-health-audit
-description: "Full-stack Hermes Agent health audit: observability config, compression tuning, prompt/skill consistency, skill invocation diagnosis, system overload detection, and session pattern analysis with subagent recommendations. Use when skills stop triggering, model ignores loaded skill steps, context grows unexpectedly, sessions hit compression too often, long tasks get interrupted, or after editing any prompt/skill/config file."
+description: "Full-stack Hermes Agent health audit: observability config, compression tuning, prompt/skill consistency, skill invocation diagnosis, system overload detection, session pattern analysis, tool-use/delegation tuning, plus a full annotated config (model/queue/IO/security), per-channel Feishu output discipline, a prompt-engineering method, and a reverse-QA regression loop. Use when skills stop triggering, model ignores loaded skill steps, context grows unexpectedly, sessions hit compression too often, long tasks get interrupted, the task queue misbehaves, or after editing any prompt/skill/config file."
 ---
 
 # Hermes Health Audit
@@ -176,8 +176,8 @@ ls -lt ~/.hermes/sessions/request_dump_*.json | head -5
 
 # 解析最新一条的 context 大小
 python3 -c "
-import json, sys, glob
-files = sorted(glob.glob('/Users/abel/.hermes/sessions/request_dump_*.json'))
+import json, sys, glob, os
+files = sorted(glob.glob(os.path.expanduser('~/.hermes/sessions/request_dump_*.json')))
 if not files: sys.exit('No dumps found')
 d = json.load(open(files[-1]))
 body = json.loads(d['request']['body']) if isinstance(d['request']['body'], str) else d['request']['body']
@@ -549,7 +549,7 @@ ls -t ~/.hermes/sessions/session_*.json | head -20 | while read f; do
 done
 ```
 
-**Benchmark (from real data, Abel's 100+ feishu sessions):**
+**Benchmark (from real data, 100+ production feishu sessions):**
 
 | Metric | Actual Value | Meaning |
 |--------|-------------|---------|
@@ -590,7 +590,7 @@ ORDER BY started_at DESC LIMIT 10;"
 - Cache hit >95% → excellent (system prompt + early messages fully cached)
 - Cache hit 80-95% → normal (some cache misses on long sessions)
 - Cache hit <80% → investigate (config changes invalidating cache, or model switching mid-session)
-- Abel's baseline: >99% cache hit (system prompt dominates repeated calls)
+- Observed baseline: >99% cache hit (system prompt dominates repeated calls)
 
 ### 6.5 Long Task & Interrupt Strategy
 
@@ -669,6 +669,125 @@ After running 7.1, output a pruning recommendation:
 ```
 
 **Important**: Only remove skills from `~/.hermes/skills/` (local). Plugin-provided skills (openclaw-imports, etc.) are managed by the plugin system.
+
+---
+
+## Phase 8: Tool-Use & Delegation Tuning
+
+Four high-impact fixes from a real audit where a Claude-backed agent "felt passive" and sub-tasks were overpriced. Verify against your own setup; don't apply blind.
+
+### 8.1 Enforce tool use for Claude models
+
+`tool_use_enforcement: auto` only injects the "You MUST use your tools" steering for a hardcoded model list (`gpt/gemini/grok/qwen/...` in `agent/prompt_builder.py`) — **Claude/Opus/Sonnet are excluded**, so they narrate instead of acting and under-search.
+
+```yaml
+agent:
+  tool_use_enforcement: true   # was: auto (skips Claude) · false · [name-substrings]
+```
+Verify: restart, give a lookup task, confirm it calls a tool (compare web_search freq via Phase 6).
+
+### 8.2 Cheaper sub-agent model
+
+`delegation.model: ''` makes sub-agents **inherit the parent (Opus)** — grunt work (file scans, batch fetches) pays Opus prices.
+
+```yaml
+delegation:
+  model: us.anthropic.claude-sonnet-4-6   # was '' · provider '' inherits parent's
+```
+Main convo stays strong; only sub-tasks drop. **Gotcha:** a wrong model ID fails silently at delegation time, not config load — so prove it exists with a real `aws bedrock-runtime invoke-model` call first.
+
+### 8.3 Add deep-research depth
+
+Enforcement (8.1) fixes *willingness*, not *depth* — built-in `web_search` only returns snippets. Mount the `agentcore-deepsearch` skill (this repo) in `mcp_servers` (and CC's `~/.mcp.json`). Verify: `ps aux | grep agentcore-deepsearch/server.py`.
+
+### 8.4 Stale pointers after a prompt refactor
+
+Rules moved (e.g. AGENTS.md → SOUL.md) but memory still points at the old file → silent rule loss. Hermes only reliably loads SOUL.md; AGENTS.md loads only when cwd is the agent home (fails under cron).
+```bash
+grep -rniE "AGENTS\.md|以 .* 为准|回查 .*\.md" ~/.hermes/SOUL.md ~/.hermes/memories/ 2>/dev/null
+```
+Repoint stale refs; banner deprecated files with "DO NOT add rules here — moved to SOUL.md".
+
+> **Quick reference config:** [`references/optimized-config.yaml`](references/optimized-config.yaml) — the Phase 8 settings in one annotated `config.yaml`, each line noting why.
+
+---
+
+## Phase 9: Full-Config, Queue, IO & QA Hardening
+
+Phase 8 fixes the four highest-leverage knobs. Phase 9 is the rest of a real,
+heavily-used deployment: the *complete* annotated config, the task-queue
+parameters, per-channel output discipline (Feishu/Lark), the prompt-engineering
+method, and the reverse-QA loop that proves a change actually took effect. These
+are reference specs — copy what fits your backend, don't paste blind.
+
+### 9.1 Full annotated config (every tunable that matters)
+
+The quick config in 8 is a teaser. The full one documents every block: model,
+compression, auxiliary-model routing, delegation, the **kanban task-queue**,
+session/reset lifecycle, tool-loop guardrails, per-platform display, security,
+secrets, and MCP mounts — one WHY per line.
+
+> **Full reference:** [`references/full-config-annotated.yaml`](references/full-config-annotated.yaml)
+
+Self-build checklist per deploy (don't copy values blind):
+- Set `model` / region / `custom_providers` to your backend; keep every
+  `api_key: ''` and load real keys from env / a secrets manager.
+- Tune the **queue** (`kanban:`) to your throughput: `dispatch_interval_seconds`,
+  `failure_limit`, `auto_decompose_per_tick`, `max_in_progress_per_profile`,
+  `dispatch_stale_timeout_seconds` (reclaim stuck tasks).
+- Tune `session_reset` (`idle_minutes`, `at_hour`) and `compression.threshold`
+  to your context window — `0.5` on a 1M window, higher on smaller windows.
+
+### 9.2 Feishu / Lark output discipline
+
+The Lark client doesn't render token streaming or live tool progress, and interim
+"working on it" messages spam the chat. Mute them per-channel while keeping them
+on terminal/Telegram:
+
+```yaml
+display:
+  platforms:
+    feishu:
+      tool_progress: false              # Lark can't render live progress → noise
+      streaming: false                  # no token streaming on Lark → disable
+      interim_assistant_messages: false # stop the "working..." spam
+      busy_ack_detail: false            # terse busy ack
+      long_running_notifications: true  # DO keep: notify on long-task completion
+feishu:
+  allow_bots: all                       # all | none | [open_ids] — gate bot-to-bot triggers
+```
+
+Pair this with the prompt-side rule "prefer lists over tables on Feishu" (the
+post-markdown renderer drops pipe tables). Config + prompt together; see 9.3.
+Full per-channel matrix is in the full config reference.
+
+### 9.3 Prompt-engineering method (write rules the model actually follows)
+
+Distilled method for the identity prompt (`SOUL.md`), so a long file doesn't
+become "loaded but ignored": explicit priority tags (`MUST` / `NEVER`, scarce),
+every rule carries its **consequence**, positive+negative example pairs, and
+periodic **compression** (one rule = one line, push runbooks into skills). Plus
+the "every reply is a finished product" output-discipline section and the
+anti-AI-tells ban list.
+
+> **Method:** [`references/prompt-engineering-playbook.md`](references/prompt-engineering-playbook.md)
+
+Reminder (Phase 8.4): Hermes only reliably loads `SOUL.md` — `AGENTS.md` loads
+only when cwd is the agent home, so it silently fails under cron/gateway. Put
+every rule in SOUL.md; tombstone AGENTS.md.
+
+### 9.4 Reverse-QA evaluation (prove the change took effect)
+
+Editing a file ≠ the rule taking effect. After any Phase change, run the
+regression loop: **restart the gateway → trigger each changed rule with a real,
+stateful task → watch for the failure signal → on FAIL, ask the agent "why didn't
+you do X, one-sentence root cause, no excuses"** and patch the named rule. Use a
+stateful session (`hermes chat`), never a stateless `-z` probe.
+
+> **QA loop:** [`references/qa-evaluation-playbook.md`](references/qa-evaluation-playbook.md)
+
+This is the verification gate for the whole audit. A green audit with no
+behavioral regression test is an unverified audit.
 
 ---
 
