@@ -1,6 +1,6 @@
 ---
 name: cloudfront-s3-oac
-description: Securely serve private S3 content through CloudFront using Origin Access Control (OAC). Use when you need to make S3 files publicly accessible over a CDN without making the bucket itself public — e.g. hosting static sites, media, downloads, or podcast/web artifacts. Covers the modern OAC approach (AWS-recommended), migrating legacy OAI distributions to OAC, locking down the bucket Public Access Block, enforcing HTTPS, and verifying the result. Never make an S3 bucket public directly.
+description: Securely serve private S3 content through CloudFront using Origin Access Control (OAC). Use when you need to make S3 files publicly accessible over a CDN without making the bucket itself public — e.g. hosting static sites, media, downloads, or build artifacts. Covers the modern OAC approach (AWS-recommended), migrating legacy OAI distributions to OAC, locking down the bucket Public Access Block, enforcing HTTPS, and verifying the result. Never make an S3 bucket public directly.
 ---
 
 # CloudFront + S3 with Origin Access Control (OAC)
@@ -18,12 +18,23 @@ SSE-KMS-encrypted buckets, fails in newer regions, and AWS has stopped investing
 in it. New setups use OAC; existing OAI distributions should be migrated.
 
 ```
-Public user → custom domain (e.g. media.example.com)
+Public user → custom domain (e.g. cdn.example.com)
             → CloudFront distribution (dxxxx.cloudfront.net)
             → CloudFront signs request with OAC (SigV4)
             → reads PRIVATE S3 bucket
             → returns object to user
 ```
+
+## Placeholders used in this guide
+
+Replace these throughout with your own values:
+
+- `<BUCKET_NAME>` — your S3 bucket name
+- `<REGION>` — bucket region, e.g. `us-east-1`
+- `<ACCOUNT_ID>` — your 12-digit AWS account ID
+- `<DISTRIBUTION_ID>` — the CloudFront distribution ID (e.g. `E…`)
+- `<OAC_ID>` — the Origin Access Control ID
+- `<CDN_DOMAIN>` — the public domain (custom alias or `dxxxx.cloudfront.net`)
 
 ## Security Rules (MUST follow)
 
@@ -43,12 +54,12 @@ Public user → custom domain (e.g. media.example.com)
 
 ## Quick Start — brand-new OAC setup
 
-Assumes a private bucket `MY_BUCKET` in region `MY_REGION` already holds the files.
+Assumes a private bucket `<BUCKET_NAME>` in region `<REGION>` already holds the files.
 
 ```bash
 ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
-BUCKET=MY_BUCKET
-REGION=MY_REGION
+BUCKET=<BUCKET_NAME>
+REGION=<REGION>
 
 # 1. Lock the bucket down — all Public Access Block switches ON
 aws s3api put-public-access-block --bucket "$BUCKET" \
@@ -63,7 +74,7 @@ OAC_ID=$(aws cloudfront create-origin-access-control \
 echo "OAC_ID=$OAC_ID"
 
 # 3. Create the distribution with the S3 REST endpoint as origin + the OAC.
-#    Use the regional REST endpoint: <bucket>.s3.<region>.amazonaws.com
+#    Use the regional REST endpoint: <BUCKET_NAME>.s3.<REGION>.amazonaws.com
 #    (NOT the website endpoint). See references/distribution-config.json for a
 #    full ready-to-edit config you can pass to create-distribution.
 
@@ -80,10 +91,10 @@ Then attach the bucket policy (replace the three placeholders):
     "Effect": "Allow",
     "Principal": { "Service": "cloudfront.amazonaws.com" },
     "Action": "s3:GetObject",
-    "Resource": "arn:aws:s3:::MY_BUCKET/*",
+    "Resource": "arn:aws:s3:::<BUCKET_NAME>/*",
     "Condition": {
       "StringEquals": {
-        "AWS:SourceArn": "arn:aws:cloudfront::ACCOUNT_ID:distribution/DISTRIBUTION_ID"
+        "AWS:SourceArn": "arn:aws:cloudfront::<ACCOUNT_ID>:distribution/<DISTRIBUTION_ID>"
       }
     }
   }]
@@ -97,22 +108,22 @@ aws s3api put-bucket-policy --bucket "$BUCKET" --policy file://bucket-policy.jso
 ## Migrating a legacy OAI distribution to OAC
 
 Symptom you'll find on old setups: the distribution origin has
-`S3OriginConfig.OriginAccessIdentity = origin-access-identity/cloudfront/XXXX`
+`S3OriginConfig.OriginAccessIdentity = origin-access-identity/cloudfront/<OAI_ID>`
 and the bucket policy trusts a principal like
-`arn:aws:iam::cloudfront:user/CloudFront Origin Access Identity XXXX`.
+`arn:aws:iam::cloudfront:user/CloudFront Origin Access Identity <OAI_ID>`.
 
 Migration steps (no file movement, fully reversible):
 
 1. **Back up first:**
    ```bash
-   aws cloudfront get-distribution-config --id DIST_ID > /tmp/dist-backup.json
-   aws s3api get-bucket-policy --bucket BUCKET --query Policy --output text > /tmp/policy-backup.json
+   aws cloudfront get-distribution-config --id <DISTRIBUTION_ID> > dist-backup.json
+   aws s3api get-bucket-policy --bucket <BUCKET_NAME> --query Policy --output text > policy-backup.json
    ```
 2. Create an OAC (step 2 above).
 3. `get-distribution-config` → edit the JSON: set `OriginAccessControlId` to the
    new OAC, blank out `S3OriginConfig.OriginAccessIdentity` (set to `""`), keep
    the `ETag` for the `--if-match` flag.
-4. `update-distribution --id DIST_ID --if-match ETAG --distribution-config file://edited.json`
+4. `update-distribution --id <DISTRIBUTION_ID> --if-match <ETAG> --distribution-config file://edited.json`
 5. Replace the bucket policy with the OAC-style policy (Service principal +
    `AWS:SourceArn` condition) shown above.
 6. Flip the Public Access Block to all-`true` if it wasn't already.
@@ -124,19 +135,19 @@ Keep the old OAI around until verification passes; delete it only after.
 
 ```bash
 # 1. CDN serves the file over HTTPS
-curl -sI https://YOUR_DOMAIN_OR_CF_DOMAIN/path/to/object | head -5
+curl -sI https://<CDN_DOMAIN>/path/to/object | head -5
 #    expect: HTTP/2 200
 
 # 2. Direct S3 access is DENIED (the whole point)
-curl -sI https://BUCKET.s3.REGION.amazonaws.com/path/to/object | head -3
+curl -sI https://<BUCKET_NAME>.s3.<REGION>.amazonaws.com/path/to/object | head -3
 #    expect: HTTP/1.1 403 Forbidden
 
 # 3. HTTP redirects to HTTPS (not plaintext)
-curl -sI http://YOUR_DOMAIN/path/to/object | grep -i location
+curl -sI http://<CDN_DOMAIN>/path/to/object | grep -i location
 #    expect: a https:// Location header
 
 # 4. Public Access Block is fully on
-aws s3api get-public-access-block --bucket BUCKET
+aws s3api get-public-access-block --bucket <BUCKET_NAME>
 #    expect: all four flags true
 ```
 
@@ -146,10 +157,10 @@ Block + bucket policy before telling anyone it's done.
 ## Pitfalls
 
 - **Website endpoint vs REST endpoint:** OAC requires the S3 *REST* endpoint
-  (`bucket.s3.region.amazonaws.com`). The S3 *website* endpoint
-  (`bucket.s3-website-...`) does NOT support OAC and forces the bucket public.
-  If you need S3 website features (index docs, redirects), use a CloudFront
-  Function / default root object instead of the website endpoint.
+  (`<BUCKET_NAME>.s3.<REGION>.amazonaws.com`). The S3 *website* endpoint
+  (`<BUCKET_NAME>.s3-website-...`) does NOT support OAC and forces the bucket
+  public. If you need S3 website features (index docs, redirects), use a
+  CloudFront Function / default root object instead of the website endpoint.
 - **KMS-encrypted buckets:** OAC supports SSE-KMS (OAI did not). The KMS key
   policy must also allow the CloudFront service principal to `kms:Decrypt`.
 - **403 after migration:** usually the bucket policy still trusts the old OAI,
@@ -157,7 +168,7 @@ Block + bucket policy before telling anyone it's done.
 - **Default root object:** set `DefaultRootObject=index.html` for static sites,
   or `curl` to `/` returns 403/no-key errors.
 - **Cache after updates:** changed an object but CDN serves stale? Invalidate:
-  `aws cloudfront create-invalidation --distribution-id DIST_ID --paths "/*"`.
+  `aws cloudfront create-invalidation --distribution-id <DISTRIBUTION_ID> --paths "/*"`.
 
 ## References
 
