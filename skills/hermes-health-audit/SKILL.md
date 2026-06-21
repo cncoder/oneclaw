@@ -457,6 +457,31 @@ grep -ciE "❌|\*\*禁止\*\*|绝对禁止|永远禁止|MUST|NEVER" ~/.hermes/AG
 
 **何时不该压**：每条 directive 都是独立事故沉淀且尚未内化时（如刚踩过的坑），保留原样直到形成肌肉记忆；压缩前确认哪些已内化。
 
+### 5.5 别在 SOUL.md 里手写 skill 清单（反模式）
+
+常见诱惑：在身份提示里列一份"我有哪些 skill"。**不要。** 框架已经在 system prompt 里自动注入一段 `available_skills` 索引（全部 skill 的 name + description），SOUL 再抄一遍会撞三个问题：① 重复 → 稀释信号、占 token、拖慢每次调用（正是 5.1/5.2 在量的过载）；② 必然过时 → skill 是动态的，手写清单漏更一次就开始撒谎，自动索引永远跟磁盘同步；③ 职责错位 → SOUL 管"我是谁、我的底线"，skill 清单是"我手上有什么工具"。
+
+```bash
+# 自动注入的 skill 索引长这样（确认机制已存在，别在 SOUL 里重复它）
+grep -c "available_skills\|## Skills" /tmp/current_system_prompt.txt
+```
+
+该留在 SOUL 的是**场景指针**而非清单：「写改提示词前先翻 `prompt-engineering`」「深度调研走 `agentcore-deepsearch`」这种"在 X 场景该翻哪个 skill"的强提示，是 SOUL 该管的做事原则；泛泛的"我有 a/b/c/d 个 skill"列表则删掉。
+
+### 5.6 审计脚本自查：grep 的假阴性会骗你
+
+这份 skill 大量用 `grep` 做存在性判断，有个高频陷阱：在 zsh 里写 `grep -cE "A\|B"`（双引号内的 `\|`）转义会失效，命中数返回 0，让你误判"本地没有 / 规则缺失"，进而拿假阴性当依据去改配置。判断"某条规则在不在"这种关键存在性检查时，用单独关键词逐个 grep 复核，别只信一次带 `\|` 的合并查询：
+
+```bash
+# 不稳（zsh 下 \| 可能失效 → 假 0）
+grep -cE "大白话\|破折号" SOUL.md
+# 稳（逐个查，任一命中即为"已有"）
+for kw in 大白话 破折号 先实证; do
+  printf "%s: %s\n" "$kw" "$(grep -c "$kw" SOUL.md)"
+done
+```
+通则：审计结论若依赖"grep 返回 0 = 不存在"，先换个写法复核一次再下结论。
+
 ---
 
 ## Phase 6: Session Pattern Analysis
@@ -707,6 +732,46 @@ Rules moved (e.g. AGENTS.md → SOUL.md) but memory still points at the old file
 grep -rniE "AGENTS\.md|以 .* 为准|回查 .*\.md" ~/.hermes/SOUL.md ~/.hermes/memories/ 2>/dev/null
 ```
 Repoint stale refs; banner deprecated files with "DO NOT add rules here — moved to SOUL.md".
+
+### 8.5 Shared browser (CDP) is a busy resource — release it in `finally`
+
+If the agent reaches closed sources (Reddit/X/etc.) through a local logged-in Chrome over CDP, that Chrome on `:9222` is shared by *every* tool that needs a real login session (deep-search, AI-search report fetchers, image-gen, manual CDP skills). A fetch that opens a tab/WebSocket and doesn't release it on the error path leaves a dangling connection that blocks the next caller.
+
+The bug pattern (seen in production): `ws.close()` written only on the success path, so a mid-fetch exception (page hang, `Runtime.evaluate` timeout) skips it and the WebSocket dangles until GC. Fix is to put **every** release in `finally` — WebSocket first, then tab close, then any busy-lock clear:
+
+```python
+ws = None
+tab_id = None
+try:
+    ...  # open tab, connect ws, evaluate
+finally:
+    if ws is not None:
+        try: ws.close()
+        except Exception: pass
+    if tab_id:
+        try: close_tab(tab_id)   # e.g. GET /json/close/<id>
+        except Exception: pass
+    clear_busy_lock()            # if you gate self-heal on an idle lock
+```
+
+Verify the resource is actually clean after a fetch — don't trust "exit 0":
+```bash
+lsof -nP -iTCP:9222 2>/dev/null | grep -c ESTABLISHED   # want 0 when idle
+curl -s http://127.0.0.1:9222/json/list | \
+  python3 -c "import sys,json;print(len([t for t in json.load(sys.stdin) if t.get('type')=='page']))"  # only the idle tab(s)
+```
+
+### 8.6 MCP stdio servers need a process-level reload, not just `/new`
+
+Config changes take effect with a new session (`/new`), but a **code** change to an MCP stdio server (the Python/Node process the agent spawns for a tool) does NOT — the running process still holds the old code. stdio MCP servers are spawned per-client and live as long as their parent; to reload, kill the old processes and let the next tool call respawn them with the new code.
+
+```bash
+# Find them and confirm the parent before killing (don't kill the agent itself)
+ps aux | grep "your-mcp-server.py" | grep -v grep
+for pid in <those_pids>; do ppid=$(ps -o ppid= -p $pid|tr -d ' '); echo "$pid <- $(ps -o command= -p $ppid|cut -c1-60)"; done
+kill <those_pids>          # next tool call respawns with new code
+```
+Then **prove** the new code loaded by exercising the tool once (e.g. a real fetch), not by checking the process is up. A respawned process with a syntax error will be "running" but broken.
 
 > **Quick reference config:** [`references/optimized-config.yaml`](references/optimized-config.yaml) — the Phase 8 settings in one annotated `config.yaml`, each line noting why.
 
