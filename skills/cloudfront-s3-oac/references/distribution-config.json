@@ -1,16 +1,16 @@
 {
-  "_comment": "Ready-to-edit config for: aws cloudfront create-distribution --distribution-config file://this.json. Replace ALL_CAPS placeholders. The OAC must already exist (create-origin-access-control) and its Id goes in OriginAccessControlId. After creation, attach the bucket policy that trusts this distribution's ARN (see SKILL.md). CallerReference must be unique per create call.",
-  "CallerReference": "REPLACE_WITH_UNIQUE_STRING_OR_TIMESTAMP",
-  "Comment": "CloudFront for MY_BUCKET via OAC",
+  "_comment": "Ready-to-edit config for: aws cloudfront create-distribution --distribution-config file://this.json. Replace every <PLACEHOLDER>. The OAC must already exist (create-origin-access-control) and its Id goes in OriginAccessControlId. After creation, attach the bucket policy that trusts this distribution's ARN (see SKILL.md). CallerReference must be unique per create call.",
+  "CallerReference": "<UNIQUE_STRING_OR_TIMESTAMP>",
+  "Comment": "CloudFront for <BUCKET_NAME> via OAC",
   "Enabled": true,
   "DefaultRootObject": "index.html",
   "Origins": {
     "Quantity": 1,
     "Items": [
       {
-        "Id": "s3-MY_BUCKET",
-        "DomainName": "MY_BUCKET.s3.MY_REGION.amazonaws.com",
-        "OriginAccessControlId": "REPLACE_WITH_OAC_ID",
+        "Id": "s3-<BUCKET_NAME>",
+        "DomainName": "<BUCKET_NAME>.s3.<REGION>.amazonaws.com",
+        "OriginAccessControlId": "<OAC_ID>",
         "S3OriginConfig": {
           "OriginAccessIdentity": ""
         },
@@ -23,7 +23,7 @@
     ]
   },
   "DefaultCacheBehavior": {
-    "TargetOriginId": "s3-MY_BUCKET",
+    "TargetOriginId": "s3-<BUCKET_NAME>",
     "ViewerProtocolPolicy": "redirect-to-https",
     "AllowedMethods": {
       "Quantity": 2,
@@ -35,11 +35,11 @@
     },
     "Compress": true,
     "CachePolicyId": "658327ea-f89d-4fab-a63d-7e88639e58f6",
-    "_CachePolicyId_comment": "658327ea-f89d-4fab-a63d-7e88639e58f6 is the AWS managed CachingOptimized policy"
+    "_CachePolicyId_comment": "658327ea-f89d-4fab-a63d-7e88639e58f6 is the AWS managed CachingOptimized policy (same ID for every account)"
   },
   "PriceClass": "PriceClass_All",
   "ViewerCertificate": {
-    "_comment": "For a custom domain, set ACMCertificateArn (must be in us-east-1), SSLSupportMethod=sni-only, MinimumProtocolVersion=TLSv1.2_2021, and add the domain to Aliases below. For the default *.cloudfront.net domain only, keep CloudFrontDefaultCertificate=true and leave Aliases empty.",
+    "_comment": "For a custom domain, set ACMCertificateArn (cert must be in us-east-1), SSLSupportMethod=sni-only, MinimumProtocolVersion=TLSv1.2_2021, and add the domain to Aliases below. For the default *.cloudfront.net domain only, keep CloudFrontDefaultCertificate=true and leave Aliases empty.",
     "CloudFrontDefaultCertificate": true
   },
   "Aliases": {
