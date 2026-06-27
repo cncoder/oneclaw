@@ -15,7 +15,7 @@ This skill audits and optimizes Hermes Agent's configuration, behavior, and perf
 - Config changes only affect `~/.hermes/config.yaml` (Hermes config file)
 - **Never modify** Claude Code (`~/.claude/`), OpenClaw (`~/.openclaw/`), or other agent configs
 
-**Backend:** AWS Bedrock Claude (us.anthropic.claude-opus-4-6-v1), 1M context window (requires explicit `context_length: 1000000` in config — Bedrock static table defaults to 200K, beta header `context-1m-2025-08-07` is sent but Hermes resolver needs the override), free unlimited. All optimization targets maximum quality, cost ignored.
+**Backend:** AWS Bedrock Claude (us.anthropic.claude-opus-4-8), 1M context window (requires explicit `context_length: 1000000` in config — Bedrock static table defaults to 200K, beta header `context-1m-2025-08-07` is sent but Hermes resolver needs the override), free unlimited. All optimization targets maximum quality, cost ignored.
 
 6-phase diagnostic covering observability, compression, consistency, invocation, overload detection, and session behavior analysis.
 
@@ -44,12 +44,13 @@ Ensure diagnostic signals are visible before debugging anything else.
 
 ```yaml
 model:
-  default: us.anthropic.claude-opus-4-6-v1
-  provider: bedrock
-  context_length: 1000000    # 必须显式设置！Bedrock 静态表默认 200K，此项覆盖为 1M
+  default: us.anthropic.claude-opus-4-8
+  provider: amazon-bedrock
+  context_length: 200000     # 默认建议 200K（见 Phase 2 实战教训：1M 配高 threshold 会导致压缩永不触发、每轮重算变慢）。
+                             # 仅当确有「单轮 >18 万 token」刚需（如喂超长文档）才显式开到 1000000——Bedrock 静态表默认 200K，开 1M 必须显式写此项覆盖。
 
 display:
-  tool_progress_command: true    # show tool calls in real-time
+  tool_progress_command: true    # show tool calls in real-time（终端/CLI）
   runtime_footer:
     enabled: true
     fields: [model, context_pct, cwd]  # ONLY these 3 fields are implemented in runtime_footer.py
@@ -59,6 +60,25 @@ display:
 agent:
   busy_input_mode: "steer"       # 新消息作为方向调整注入当前 turn（需新 session 生效，见文末）
 ```
+
+### 飞书/Lark 进度可见性：「只看到 ⏳ Working，没有任何步骤」（实战踩坑）
+
+症状：飞书里长任务只显示一个干巴巴的「⏳ Working — N min」计时器，底下 agent 调什么工具、跑到哪一步全看不见，用户无法判断是在干活还是卡死。
+
+根因：`display.platforms.feishu` 默认把进度类开关全关了（per-channel 覆盖优先于全局 `tool_progress_command`）。这是**取舍**不是 bug——关掉是为了少打扰，但代价是长任务完全黑盒。
+
+```yaml
+display:
+  platforms:
+    feishu:
+      tool_progress: true               # ✅ 显示实时工具步骤（飞书 streaming=false 时它编辑同一条 ⏳ 消息，不刷屏）
+      interim_assistant_messages: false # 保持 false：agent 中途自言自语会多发消息，最吵
+      busy_ack_detail: true             # 打断时回执带细节，几乎不吵
+      streaming: false                  # 飞书不支持 token 流，保持 false
+      long_running_notifications: true  # 长任务完成通知，保留
+```
+
+判据：用户抱怨「不知道在干嘛 / 是不是卡了」→ 开 `tool_progress`。怕吵 → `interim_assistant_messages` 保持 false。这三个开关独立可调，按「要看见 vs 怕打扰」分别取舍。
 
 **Choosing `busy_input_mode` (check session patterns first):**
 
@@ -149,7 +169,7 @@ HERMES_DUMP_REQUESTS=1 hermes gateway run
     "method": "POST",
     "url": "...",
     "body": {
-      "model": "us.anthropic.claude-opus-4-6-v1",
+      "model": "us.anthropic.claude-opus-4-8",
       "system": "（完整 system prompt：SOUL.md + memory + skills index）",
       "messages": [{"role":"user","content":"..."},  ...],
       "tools": [...],
@@ -216,12 +236,34 @@ Compression = #1 cause of "skill stops working after chatting".
 4. Skill loaded 30+ messages ago → summarized → steps lost
 5. Model can't see instructions → "laziness"
 
+### ⚠️ 实战教训：threshold 看的是「绝对 token 触发点」，不是「窗口百分比」
+
+**最容易踩的坑：window 越大就把 threshold 设越高 → 压缩永远不触发 → 每轮重算几十万 token，越来越慢。**
+
+真实事故（生产实测）：`context_length: 1000000` + `threshold: 0.75` = 要堆到 **75 万 token 才压缩**。但一个深挖型任务峰值也就 35-40 万 token，**永远够不到触发线**，于是 50+ 次 API call 每一轮都背着 35 万 token 全量重算，单轮延迟从 70s 一路涨到 220s，一个指令跑了 34 分钟。
+
+两个独立的代价，都被「晚压缩」放大：
+1. **慢**：input token 越大，单轮推理越慢（实测 in=12k→3s，in=40万→50s+），且每轮重算不可缓存的尾部。
+2. **注意力涣散**：模型在 30 万+ token 里抓不住早先的指令/skill 步骤，表现成「偷懒」「忘了规则」。
+
+**正确心智模型**：threshold × context_length = **绝对触发 token 数**，这个绝对值才是要控的目标。让它落在「模型注意力还清醒 + 单轮还不卡」的区间（实测 **10-18 万 token** 比较舒服），而不是窗口的某个固定百分比。
+
+| 你的 context_length | 推荐 threshold | = 绝对触发点 | 说明 |
+|---|---|---|---|
+| 200K | 0.5 | 10 万 | 触发早、每轮轻快，长任务首选 |
+| 1M | 0.15-0.2 | 15-20 万 | 1M 是应急余量，日常别真用满 |
+| 1M（错误示范）| 0.75 | 75 万 | ❌ 普通任务永不触发，等于没压缩 |
+
+> 关键：**不要因为「免费无限量」就把 threshold 拉高**。免费省的是钱，省不了「大上下文本身慢 + 注意力涣散」这两笔账。
+
 ### Recommended Config
 
 ```yaml
+model:
+  context_length: 200000   # 除非真有 >18 万 token 的单轮刚需，否则别开 1M——大窗口只在「单份超长文档」场景值，日常徒增每轮延迟
 compression:
   enabled: true
-  threshold: 0.75          # 75% of window (750K for 1M with context_length override)
+  threshold: 0.5           # 200K×0.5=10万触发；若坚持 1M 窗口，这里要降到 0.15-0.2
   target_ratio: 0.2        # compress to 20%
   protect_last_n: 40       # keep last 40 messages intact
   protect_first_n: 3       # configurable (default=3, range 3-5)
@@ -233,19 +275,19 @@ compression:
 auxiliary:
   compression:
     provider: bedrock
-    model: us.anthropic.claude-opus-4-6-v1
-    context_length: 1000000  # 必须与主模型一致，否则 threshold 被自动降到压缩模型的 context 上限
+    model: us.anthropic.claude-opus-4-8
+    context_length: 1000000  # 规则（源码 conversation_compression.py 实证）：aux 压缩模型的 context 必须 ≥ 主模型的「绝对触发 token 数」(threshold×主window)，否则启动时主阈值会被自动降到 aux 的 context 上限。给 aux 配大窗口（1M）最省心，保证不会反向拖低主阈值
 ```
 
-### Tuning Table
+### Tuning Table（按绝对触发 token 调，不是按百分比）
 
 | Parameter | Conservative | Aggressive | Guidance |
 |-----------|-------------|------------|----------|
-| threshold | 0.6 | 0.8 | Higher = more room before compression |
+| 绝对触发点 (threshold×window) | 18 万 | 8 万 | 越低=压得越勤、每轮越轻、注意力越聚焦 |
 | protect_last_n | 20 | 60 | Higher = skills survive longer |
 | protect_first_n | 3 | 5 | Higher = early context preserved |
 
-Free-tier (Bedrock/employee): threshold≥0.75, protect_last_n≥40. No reason to compress early.
+**免费档（Bedrock/employee）也要主动压缩**：省钱 ≠ 该用满窗口。绝对触发点压到 10-18 万、protect_last_n≥40，既保 skill 存活又保每轮轻快。
 
 ### Verify
 
@@ -579,16 +621,17 @@ done
 | Metric | Actual Value | Meaning |
 |--------|-------------|---------|
 | Avg session length | 72 messages | ~36 turns |
-| Compression fires at | avg 107 messages 下 old 0.6 threshold，现 0.75 后应 ~140 | ~54 → ~70 turns |
 | Tool density | 0.43-0.50 (= 0.85-1.0 tools/turn) | High automation |
 | Compression rate | 39% of sessions | Expected for power users |
 | Sessions with delegate_task | ~4 recent | Adoption just starting |
 
-**Validated config (threshold=0.75, protect_last_n=40, max_turns=120 均已落地):**
-- Compression 延后 ~30%（由 ~107 → ~140 messages 触发）
-- 最近 40 条消息内加载的 skill 现在能熞过压缩
+> ⚠️ **早期版本曾推荐「晚压缩」（threshold 0.75 / 延后到 ~140 messages），后被生产事故推翻**——见 Phase 2 实战教训。延后压缩看似省调用，实则让每轮重算几十万 token、延迟飙到 220s。现行结论相反：**让绝对触发点落在 10-18 万 token，压得勤、每轮轻、skill 也靠 protect_last_n≥40 存活**。
+
+**Validated config (绝对触发点 10-18 万、protect_last_n=40、max_turns=120):**
+- 单轮 input 控制在十几万 token 量级，延迟稳定在数十秒内（实测 in=12k→3s，in=40万→50s+）
+- 最近 40 条消息内加载的 skill 能熬过压缩
 - 长链任务不再在第 60 turn 被硬停
-- 上线 2 周后复查实际 compression 点与 cache hit 验证
+- 上线后复查：实际 compression 触发点、单轮 latency 分布、cache hit
 
 ### 6.4 Cache Hit Ratio (Prompt Caching Health)
 
@@ -623,6 +666,41 @@ ORDER BY started_at DESC LIMIT 10;"
 - `gateway_auto_continue_freshness: 3600` — 被中断后 1h 内自动恢复上下文
 - Recurring 长任务 → cronjob（独立 session，完全隔离）
 - 一次性长任务 → delegate_task（子 agent 边跑边写文件，即使被打断已写入内容不丢）
+
+### 6.6 Session Reset：跨天「失忆」的元凶（实战踩坑）
+
+症状：用户上午聊一件事，晚上接着说「改成 X」，agent 完全关联不上，像换了个人。
+
+根因：`session_reset.mode` 默认 `both`，含一条**每天 `at_hour`（默认 4 点）强制清空整个对话上下文**的规则。跨过那个点，上下文被整体 wipe（重置前只把要点存进长期记忆，但对话来龙去脉断了）。这跟「压缩」完全不同——压缩是缩成摘要、要点还在；重置是清空、啥都不剩。
+
+```yaml
+session_reset:
+  mode: idle          # both（默认，含每日定时清空）| idle（只按闲置）| daily | none
+  idle_minutes: 1440  # 连续多久没说话才重置
+  at_hour: 4          # 仅 mode 含 daily 时生效的定时清空点
+```
+
+| mode | 行为 | 适合 |
+|---|---|---|
+| `both` | 每日定时清空 + 闲置清空 | ❌ 跨天连续任务会失忆 |
+| `idle` | 只在闲置 N 分钟后清空 | ✅ 跨天 continue 同一任务不断（**推荐**，token 靠压缩控） |
+| `none` | 永不自动清空 | 需手动 `/new`，最连贯但要自律 |
+
+判据：用户常跨天 continue 同一件事 → 用 `idle`；任务都是独立短问答 → `both` 也行。改完靠压缩（Phase 2）控 token，别靠重置。
+
+### 6.7 多图/多消息聚合：飞书「只收到部分图」（实战踩坑）
+
+症状：一次发 9 张图，agent 说只收到 5 张，漏处理。
+
+根因：飞书多图是 N 个独立 webhook 陆续到达，gateway 用一个聚合窗口把它们并成一条消息。窗口太短（默认 `HERMES_FEISHU_MEDIA_BATCH_DELAY_SECONDS=0.8`）→ 9 张被切成「5+2+2」三批，当成三条独立消息，agent 处理完第一批就以为结束了。
+
+```bash
+# 查窗口设置 + 看历史是否被切批
+grep MEDIA_BATCH_DELAY ~/.hermes/.env
+grep "Flushing media batch" ~/.hermes/logs/gateway.log | tail   # 同一时刻多条小 batch = 被切了
+```
+
+修复：`.env` 设 `HERMES_FEISHU_MEDIA_BATCH_DELAY_SECONDS=3.0`（3 秒窗口让同组图聚齐）。配套提醒用户：多图一次性选齐发出，别一张张隔很久发。
 
 ---
 
@@ -777,71 +855,56 @@ Then **prove** the new code loaded by exercising the tool once (e.g. a real fetc
 
 ---
 
-## Phase 9: Full-Config, Queue, IO & QA Hardening
+## Phase 9: Config / IO / Prompt Hardening — Defer to `pony-agent-blueprint`
 
-Phase 8 fixes the four highest-leverage knobs. Phase 9 is the rest of a real,
-heavily-used deployment: the *complete* annotated config, the task-queue
-parameters, per-channel output discipline (Feishu/Lark), the prompt-engineering
-method, and the reverse-QA loop that proves a change actually took effect. These
-are reference specs — copy what fits your backend, don't paste blind.
+Phase 8 fixes the four highest-leverage knobs. Phase 9 used to inline the full
+config reference, the Feishu/Lark output spec, the prompt-engineering method, and
+the reverse-QA loop. **All of that now lives in the `pony-agent-blueprint` skill**
+— the single source of truth for "what a correct, hardened config looks like."
+This audit's job is to *detect drift*; the blueprint's job is to *give the right
+answer*. Don't duplicate values across both — when the audit finds something
+misconfigured, copy the fix from the blueprint.
 
-### 9.1 Full annotated config (every tunable that matters)
+### 9.1 What this audit checks (the diagnostic half)
 
-The quick config in 8 is a teaser. The full one documents every block: model,
-compression, auxiliary-model routing, delegation, the **kanban task-queue**,
-session/reset lifecycle, tool-loop guardrails, per-platform display, security,
-secrets, and MCP mounts — one WHY per line.
+Run these drift checks; for any FAIL, the corrected value is in the blueprint.
 
-> **Full reference:** [`references/full-config-annotated.yaml`](references/full-config-annotated.yaml)
+```bash
+# A. Model / context / compression sane?  关键看「绝对触发点」= context_length × threshold（见 Phase 2）
+hermes config get model.context_length        # 200K 优先；1M 仅在单轮超长文档刚需时
+hermes config get compression.threshold        # 算 context_length×threshold 应落在 10-18 万 token；
+                                               #   200K→0.5(=10万)✅  1M→0.75(=75万)❌永不触发  1M→0.2(=20万)✅
+hermes config get auxiliary.compression.context_length  # MUST ≥ 主模型绝对触发点(context_length×threshold)，否则主阈值被自动拉低
 
-Self-build checklist per deploy (don't copy values blind):
-- Set `model` / region / `custom_providers` to your backend; keep every
-  `api_key: ''` and load real keys from env / a secrets manager.
-- Tune the **queue** (`kanban:`) to your throughput: `dispatch_interval_seconds`,
-  `failure_limit`, `auto_decompose_per_tick`, `max_in_progress_per_profile`,
-  `dispatch_stale_timeout_seconds` (reclaim stuck tasks).
-- Tune `session_reset` (`idle_minutes`, `at_hour`) and `compression.threshold`
-  to your context window — `0.5` on a 1M window, higher on smaller windows.
+# B. Message-channel queue + Feishu noise suppression
+hermes config get display.busy_input_mode               # steer（常打断/边改）或 queue（重自动化少打断）
+hermes config get display.platforms.feishu.streaming    # expect false
+hermes config get display.platforms.feishu.tool_progress # 想要步骤可见设 true（见 Phase 1 飞书进度段）
+hermes config get hooks.feishu-io-patch.enabled         # expect true (else Feishu renders broken)
+hermes config get session_reset.mode                    # 跨天 continue 用 idle，避免每日定时清空失忆（见 Phase 6.6）
 
-### 9.2 Feishu / Lark output discipline
-
-The Lark client doesn't render token streaming or live tool progress, and interim
-"working on it" messages spam the chat. Mute them per-channel while keeping them
-on terminal/Telegram:
-
-```yaml
-display:
-  platforms:
-    feishu:
-      tool_progress: false              # Lark can't render live progress → noise
-      streaming: false                  # no token streaming on Lark → disable
-      interim_assistant_messages: false # stop the "working..." spam
-      busy_ack_detail: false            # terse busy ack
-      long_running_notifications: true  # DO keep: notify on long-task completion
-feishu:
-  allow_bots: all                       # all | none | [open_ids] — gate bot-to-bot triggers
+# C. Tool-use enforcement + loop guardrails on?
+hermes config get agent.tool_use_enforcement            # expect true
 ```
 
-Pair this with the prompt-side rule "prefer lists over tables on Feishu" (the
-post-markdown renderer drops pipe tables). Config + prompt together; see 9.3.
-Full per-channel matrix is in the full config reference.
+### 9.2 Where the "right answer" lives (the prescriptive half → blueprint)
 
-### 9.3 Prompt-engineering method (write rules the model actually follows)
+Load the `pony-agent-blueprint` skill (`skill_view(name='pony-agent-blueprint')`)
+for the prescriptive config. Its files:
 
-Distilled method for the identity prompt (`SOUL.md`), so a long file doesn't
-become "loaded but ignored": explicit priority tags (`MUST` / `NEVER`, scarce),
-every rule carries its **consequence**, positive+negative example pairs, and
-periodic **compression** (one rule = one line, push runbooks into skills). Plus
-the "every reply is a finished product" output-discipline section and the
-anti-AI-tells ban list.
+| You need… | File in `pony-agent-blueprint` |
+|---|---|
+| Full annotated config, every tunable + WHY | `references/pony-config-annotated.yaml` |
+| Feishu/Lark output discipline (config + the `feishu-io-patch` hook) | `references/io-channel-discipline.md` + `templates/feishu-io-patch/` |
+| Message-queue vs task-queue distinction | `references/io-channel-discipline.md` |
+| Prompt-engineering method (rules the model actually obeys) | `templates/constraint-prompt-template.md` |
+| SOUL.md authoring skeleton | `templates/SOUL-skeleton.md` |
 
-> **Method:** [`references/prompt-engineering-playbook.md`](references/prompt-engineering-playbook.md)
+> **Key non-obvious finding the audit should flag:** Feishu output needs TWO
+> layers — config suppression AND the `feishu-io-patch` startup hook. Config alone
+> leaves tables as garbled pipes and images broken. Check both.
 
-Reminder (Phase 8.4): Hermes only reliably loads `SOUL.md` — `AGENTS.md` loads
-only when cwd is the agent home, so it silently fails under cron/gateway. Put
-every rule in SOUL.md; tombstone AGENTS.md.
-
-### 9.4 Reverse-QA evaluation (prove the change took effect)
+### 9.3 Reverse-QA evaluation (prove the change took effect)
 
 Editing a file ≠ the rule taking effect. After any Phase change, run the
 regression loop: **restart the gateway → trigger each changed rule with a real,
@@ -849,10 +912,13 @@ stateful task → watch for the failure signal → on FAIL, ask the agent "why d
 you do X, one-sentence root cause, no excuses"** and patch the named rule. Use a
 stateful session (`hermes chat`), never a stateless `-z` probe.
 
-> **QA loop:** [`references/qa-evaluation-playbook.md`](references/qa-evaluation-playbook.md)
-
 This is the verification gate for the whole audit. A green audit with no
 behavioral regression test is an unverified audit.
+
+> **AGENTS.md reminder (Phase 8.4):** Hermes only reliably loads `SOUL.md` —
+> `AGENTS.md` loads only when cwd is the agent home, so it silently fails under
+> cron/gateway. Put every rule in SOUL.md; tombstone AGENTS.md. (Full rationale
+> in the blueprint's meta-rule #4.)
 
 ---
 
@@ -867,7 +933,7 @@ behavioral regression test is an unverified audit.
 - busy_input_mode: [steer/queue/interrupt]
 
 ## Phase 2 Compression: ✅/⚠️/❌
-- threshold: [value] (recommended: ≥0.75 for free-tier)
+- 绝对触发点 = context_length × threshold: [value] (recommended: 10-18 万 token；200K×0.5 或 1M×0.15-0.2)
 - protect_last_n: [value] (recommended: ≥40)
 - current context: [X]% of [Y]K window
 
