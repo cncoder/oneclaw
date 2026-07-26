@@ -1,4 +1,12 @@
-model = "openai.gpt-5.5"
+# Codex on Amazon Bedrock（2026-07 实测于 codex-cli 0.145）
+# 认证：Bedrock API key（bearer token），不走 IAM SigV4。
+# ~/.codex/.env 两行：AWS_BEARER_TOKEN_BEDROCK=<key> 和 AWS_REGION=us-east-1
+# key 生成：aws iam create-service-specific-credential --user-name <user> \
+#           --service-name bedrock.amazonaws.com  （取 ServiceCredentialSecret）
+# 验 key：POST https://bedrock-mantle.us-east-1.api.aws/openai/v1/responses 带 Bearer，200 即通
+# GPT-5.6 仅 us-east-1 等特定区提供；list-foundation-models 不列 OpenAI 模型属正常
+
+model = "openai.gpt-5.6-sol"
 model_provider = "amazon-bedrock"
 web_search = "disabled"
 approval_policy = "never"
@@ -53,7 +61,8 @@ trust_level = "trusted"
 trust_level = "trusted"
 
 [model_providers.amazon-bedrock.aws]
-region = "us-east-2"
+region = "us-east-1"
+wire_api = "responses"
 
 [features]
 js_repl = false
@@ -103,4 +112,4 @@ generate_memories = true
 use_memories = true
 
 [tui.model_availability_nux]
-"gpt-5.5" = 2
+"gpt-5.6" = 2
