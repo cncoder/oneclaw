@@ -5,7 +5,9 @@ metadata:
   openclaw:
     emoji: "🎙️"
     requires:
-      bins: ["ffprobe", "ffmpeg"]
+      bins: ["ffprobe", "ffmpeg", "python3"]
+      # Python 版本要求: Mac=python3.12 (MLX 依赖), Linux=python3.11 (qwen-tts 兼容).
+      # python3.14 不兼容 (mlx C API / ABI)。doctor.py 会自动检查。
 ---
 
 # Skill: podcast-generator
@@ -54,12 +56,17 @@ metadata:
 
 ## 前置安装（只做一次）
 
+> **Python 版本**：Mac 用 `python3.12`（MLX 依赖），Linux 用 `python3.11`（qwen-tts 兼容）。`python3.14` 不兼容。下文命令统一用 `python3`，请先 `alias python3=python3.12`（Mac）或 `alias python3=python3.11`（Linux），或直接把命令里的 `python3` 换成对应版本。
+
 ### Mac (Apple Silicon) — MLX 后端
 
 ```bash
-pip3.12 install mlx mlx-audio numpy soundfile pydub pyloudnorm pyyaml boto3
 brew install ffmpeg python@3.12   # 已有可跳过
-export SKILL="<path-to>/podcast-generator/scripts"
+python3.12 -m pip install mlx mlx-audio numpy soundfile pydub pyloudnorm pyyaml boto3
+
+# SKILL 路径（相对 SKILL.md 所在目录）
+export SKILL="$(cd "$(dirname "$(realpath ~/.agents/skills/podcast-generator/SKILL.md 2>/dev/null || echo .)")" && pwd)/scripts"
+# 或手动设定: export SKILL=~/.agents/skills/podcast-generator/scripts
 ```
 
 ### Linux x86_64 (AL2023 / Ubuntu) — Torch 后端
@@ -72,9 +79,9 @@ sudo dnf install -y https://download1.rpmfusion.org/free/el/rpmfusion-free-relea
 sudo dnf install -y --allowerasing ffmpeg
 
 # Python 包（qwen-tts 自带 torch 2.11 + transformers 4.57.3）
-pip3.11 install qwen-tts numpy soundfile pydub pyloudnorm pyyaml boto3
+python3.11 -m pip install qwen-tts numpy soundfile pydub pyloudnorm pyyaml boto3
 
-export SKILL="<path-to>/podcast-generator/scripts"
+export SKILL=~/.agents/skills/podcast-generator/scripts
 ```
 
 首次运行会自动下载 `Qwen/Qwen3-TTS-12Hz-0.6B-Base`（~1.5GB）到 `~/.cache/huggingface/`。
@@ -86,11 +93,11 @@ export SKILL="<path-to>/podcast-generator/scripts"
 ## 一键生成（推荐）
 
 ```bash
-# 0. 环境自检（1 秒）
-python3.12 $SKILL/doctor.py
+# 0. 环境自检（1 秒，自动识别平台 + Python 版本）
+python3 $SKILL/doctor.py
 
 # 1. 一键生成
-python3.12 $SKILL/one_shot.py "AI 能否取代程序员" --duration 5min --style debate
+python3 $SKILL/one_shot.py "AI 能否取代程序员" --duration 5min --style debate
 
 # 2. 打开 HTML 播放
 open output/*/*/index.html
@@ -217,7 +224,7 @@ VOICE_PAN = {
 如果你不走 `one_shot.py`，想单独把 MP3 + 脚本拼成播放器：
 
 ```bash
-python3.12 $SKILL/generate_player_html.py /tmp/demo.mp3 /tmp/demo.txt /tmp/demo.html \
+python3 $SKILL/generate_player_html.py /tmp/demo.mp3 /tmp/demo.txt /tmp/demo.html \
   --title "AI 能不能取代程序员"
 ```
 
@@ -237,15 +244,15 @@ python3.12 $SKILL/generate_player_html.py /tmp/demo.mp3 /tmp/demo.txt /tmp/demo.
 
 ```bash
 # 1. 检查 AWS 凭证
-python3.12 $SKILL/publish_to_cdn.py check
+python3 $SKILL/publish_to_cdn.py check
 
 # 2. 起全球唯一 bucket 名
 BUCKET="my-podcast-cdn-$(whoami)-$(date +%s)"
-python3.12 $SKILL/publish_to_cdn.py provision --bucket "$BUCKET" --region us-east-1
+python3 $SKILL/publish_to_cdn.py provision --bucket "$BUCKET" --region us-east-1
 # 配置自动缓存到 ~/.podcast-generator/publish.json
 
 # 3. 等 CloudFront Deployed 后发布
-python3.12 $SKILL/publish_to_cdn.py publish \
+python3 $SKILL/publish_to_cdn.py publish \
   --mp3 podcast.mp3 --html index.html --slug ai-vs-programmers
 ```
 
@@ -278,8 +285,9 @@ python3.12 $SKILL/publish_to_cdn.py publish \
 | 症状 | 修复 |
 |------|------|
 | TTS 超时 | 重新运行，断点续传自动恢复（复用 `_tts_chunks/`） |
-| 音频质量差 | 确认无并行 TTS（`ps aux \| grep python3.12`） |
-| python3.12 找不到 | `brew install python@3.12` |
+| 音频质量差 | 确认无并行 TTS（`ps aux \| grep python3`） |
+| python3.12 找不到 (Mac) | `brew install python@3.12` |
+| python3.11 找不到 (Linux) | `sudo dnf install python3.11` (AL2023) 或 `apt install python3.11` (Ubuntu) |
 | ffmpeg 找不到 | `brew install ffmpeg` |
 | MP3 太大发不出去 | `ffmpeg -i podcast.mp3 -b:a 64k compressed.mp3` |
 
